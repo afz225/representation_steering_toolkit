@@ -1,13 +1,7 @@
 # RepSteer
 
 RepSteer is a small, standalone toolkit for controlled activation-steering and
-representation-geometry experiments. It was extracted conceptually from the cat/dog,
-style, language, and toxicity investigations, but it does not import or modify the
-parent repository.
-
-The package deliberately contains no PBS, Slurm, queue, cluster, or job-submission
-logic. Every command is an ordinary local process; execution policy belongs outside
-the research code.
+representation-geometry experiments.
 
 ## What it does
 
@@ -69,81 +63,10 @@ interchangeably.
 
 The default Decodanda geometry backend reproduces the project procedure: Pearson PS, one-out CCGP, all balanced dichotomies for SD, and separate SD classifier settings. Z-scoring is enabled by default and follows Decodanda: train-split statistics for decoding and pair-local statistics for PS.
 
-## Collateral and off-target evaluation
+## Documentation
 
-The toolkit also ports the established collateral analyses:
-
-- token-weighted causal perplexity under intervention;
-- MMLU/MMMLU-style next-token multiple-choice accuracy;
-- M-IFEval-compatible paired instruction response generation and scorer integration;
-- immediate and downstream off-target concept-axis projection drift;
-- paired LLM labels for off-target concept flips and broken-output rate.
-
-Example commands:
-
-```bash
-repsteer perplexity --config style-general.json --benchmark text.csv \
-  --vectors vectors.npz --output-dir results/perplexity
-repsteer multiple-choice --config style-general.json --benchmark mmlu.csv \
-  --vectors vectors.npz --output-dir results/mmlu
-repsteer instruction-generate --config style-general.json --benchmark mifeval.csv \
-  --vectors vectors.npz --output results/mifeval_responses.csv
-repsteer offtarget-project --config style.json --dataset probe.csv \
-  --vectors style_vectors.npz --intervention-layer 12 --coefficient 8 \
-  --capture-layers 12,15,18,21,24 \
-  --axis-config language=language.json --axis-vectors language=language_vectors.npz \
-  --axis-config is_dog=is_dog.json --axis-vectors is_dog=is_dog_vectors.npz \
-  --output-dir results/projection
-repsteer offtarget-judge --config style.json --input generations.csv \
-  --labels configs/example_offtarget_labels.json --output-dir results/offtarget_judge
-```
-
-General capability benchmarks require general vectors (`condition_on: []`). Online
-projection drift supports conditioned steering and conditioned readout axes because
-the probe dataset supplies the necessary condition columns.
-
-## Configuration and metric semantics
-
-Datasets are CSV files with a unique ID, a text column, and one column per binary
-variable. The ordered pair in `dataset.variables` defines the negative and positive
-classes. `target.condition_on` is empty for a general vector or lists nuisance
-variables for condition-specific vectors. Layer indices refer to decoder blocks,
-with layer zero denoting the output of the first block.
-
-Representations support attention-mask-aware `mean`, `last`, `min`, and `max`
-pooling. Decodability measures held-out classification of a named variable. CCGP
-trains on nuisance contexts and tests generalization to a held-out context. PS
-measures alignment among context-specific class-difference directions. SD evaluates
-all balanced dichotomies of the complete condition space and is therefore a
-space-level metric rather than a metric for one named variable.
-
-The generated-string judge randomizes baseline/steered A/B ordering and parses the
-final `Decision: A|B|T` line. It labels brokenness separately. A fluent continuation
-that misses the target is not broken; broken output means unusable prose due to
-incoherence, semantic nonsense, severe grammar failure, empty text, pathological
-repetition, truncation, boilerplate, or formatting artifacts.
-
-Perplexity is token weighted: `exp(total_nll / total_scored_tokens)`. Multiple-choice
-accuracy uses next-token answer-letter probabilities. Online projection drift uses a
-separately constructed concept axis at each downstream readout layer and reports both
-absolute drift and drift normalized by that layer's unnormalized class-mean gap.
-
-## Development and verification
-
-```bash
-python -m pip install -e '.[test]'
-pytest -q
-```
-
-Optional tests skip when Decodanda, PyTorch, or the original production artifacts are
-not available. `scripts/verify_prior_subset.py` replays postprocessing against those
-artifacts when they are present. The checked-in `parity_artifacts/parity_report.csv`
-records a deterministic subset audit whose maximum discrepancy was below `1e-12`.
-
-To support a new model family, implement the `ModelBackend` protocol or configure
-`model.layer_path` for a Hugging Face decoder layout. New vector estimators should
-return `SteeringVector` records and state their construction method explicitly.
-
-## License
-
-RepSteer is available under the [MIT License](LICENSE).
+- [Getting started](docs/getting-started.md)
+- [Configuration reference](docs/configuration.md)
+- [Methodology and metric definitions](docs/methodology.md)
+- [Evaluation and collateral effects](docs/evaluation.md)
+- [Extending RepSteer](docs/extending.md)
