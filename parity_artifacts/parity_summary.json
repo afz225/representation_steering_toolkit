@@ -1,0 +1,14 @@
+{
+  "seed": 42,
+  "requested_groups_per_family": 24,
+  "checks": 17,
+  "all_passed": true,
+  "maximum_absolute_error": 5.861977570020827e-14,
+  "families": {
+    "mifeval": 24,
+    "mmmlu": 24,
+    "offtarget_judge_summary": 24,
+    "projection_rows": 192,
+    "projection_summary": 24
+  }
+}

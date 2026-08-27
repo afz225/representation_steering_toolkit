@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "repsteer"
+version = "0.1.0"
+description = "Portable representation geometry and activation steering experiments"
+readme = "README.md"
+license = {file = "LICENSE"}
+keywords = ["activation-steering", "representation-geometry", "interpretability"]
+classifiers = [
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+requires-python = ">=3.9"
+dependencies = [
+  "numpy>=1.24",
+  "pandas>=2.0",
+  "scikit-learn>=1.3",
+]
+
+[project.optional-dependencies]
+hf = ["torch>=2.1", "transformers>=4.45", "accelerate>=0.26"]
+geometry = ["decodanda"]
+test = ["pytest>=7.4"]
+
+[project.scripts]
+repsteer = "repsteer.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

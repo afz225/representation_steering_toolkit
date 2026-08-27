@@ -1,0 +1,79 @@
+{
+  "dataset": {
+    "path": "../synthetic_catdog_full/geometry_dataset.csv",
+    "text_column": "text",
+    "id_column": "candidate_id",
+    "variables": {
+      "language": ["ar", "en"],
+      "style": ["preschool", "shakespeare"],
+      "is_dog": ["0", "1"]
+    }
+  },
+  "model": {
+    "model_id": "replace-with-target-causal-lm",
+    "dtype": "bfloat16",
+    "device_map": "auto",
+    "use_chat_template": true
+  },
+  "target": {
+    "name": "style",
+    "negative": "preschool",
+    "positive": "shakespeare",
+    "condition_on": ["language", "is_dog"]
+  },
+  "split": {
+    "vector_per_cell": 10,
+    "eval_per_cell": 10,
+    "geometry_per_cell": 50,
+    "seed": 42
+  },
+  "generation": {
+    "max_length": 2048,
+    "max_new_tokens": 96,
+    "temperature": 0.0,
+    "top_p": 1.0,
+    "do_sample": false,
+    "seed": 42
+  },
+  "steering": {
+    "layers": [0, 3, 6, 9, 12, 15, 18, 21, 24],
+    "coefficients": [4.0, 8.0, 12.0, 16.0],
+    "pooling": "mean",
+    "normalize_vector": true,
+    "positions": "all",
+    "batch_size": 8,
+    "max_length": 512,
+    "prompt_template": "Continue the following text naturally:\n{text}"
+  },
+  "geometry": {
+    "engine": "decodanda",
+    "layers": [0, 3, 6, 9, 12, 15, 18, 21, 24],
+    "poolings": ["mean"],
+    "zscore": true,
+    "n_resamplings": 25,
+    "ndata": 26,
+    "sd_ndata": 8,
+    "sd_training_fraction": 0.75,
+    "sd_cross_validations": 25,
+    "sd_accuracy_threshold": 0.6,
+    "max_samples_per_condition": 100,
+    "max_sd_dichotomies": null,
+    "seed": 42,
+    "batch_size": 8,
+    "max_length": 512
+  },
+  "judge": {
+    "model": {
+      "model_id": "replace-with-independent-instruction-judge",
+      "dtype": "bfloat16",
+      "device_map": "auto",
+      "use_chat_template": true
+    },
+    "attribute_descriptions": {
+      "style": "The target is {target} style. Shakespeare style is elevated, literary, archaic dramatic prose; preschool style is simple, concrete, age-appropriate storybook prose.",
+      "language": "The target language is {target}; evaluate actual language use rather than topic or named entities.",
+      "is_dog": "The target concept is class {target}: 1 means dog and 0 means cat."
+    },
+    "max_new_tokens": 256
+  }
+}

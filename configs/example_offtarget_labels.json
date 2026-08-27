@@ -1,0 +1,20 @@
+{
+  "language": {
+    "description": "dominant language of the continuation",
+    "labels": ["en", "ar", "mixed", "other"],
+    "source_map": {"en": "en", "ar": "ar"}
+  },
+  "style": {
+    "description": "writing register: elevated/literary versus simple/storybook",
+    "labels": ["elevated_literary", "simple_storybook", "mixed", "other"],
+    "source_map": {
+      "shakespeare": "elevated_literary",
+      "preschool": "simple_storybook"
+    }
+  },
+  "is_dog": {
+    "description": "animal concept expressed by the continuation",
+    "labels": ["cat", "dog", "both", "neither"],
+    "source_map": {"0": "cat", "1": "dog"}
+  }
+}

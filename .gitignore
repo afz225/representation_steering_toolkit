@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+
+# Test, coverage, and tooling caches
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+
+# Editors and operating systems
+.vscode/
+.idea/
+.DS_Store
+
+# Local experiments, model outputs, and credentials
+results/
+*.npz
+*.pt
+*.pth
+*.safetensors
+.env
+.env.*
+.hf_token
+
+# Direct parity replay produces sampled source rows. Keep only compact evidence.
+parity_artifacts/*
+!parity_artifacts/parity_report.csv
+!parity_artifacts/parity_summary.json
+
+# Local verification narrative
+TEST_REPORT.md
