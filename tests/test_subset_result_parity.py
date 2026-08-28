@@ -1,8 +1,16 @@
+from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 
 import pytest
 
-from scripts.verify_prior_subset import audit
+
+SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "verify_prior_subset.py"
+SPEC = spec_from_file_location("verify_prior_subset", SCRIPT)
+if SPEC is None or SPEC.loader is None:
+    raise RuntimeError(f"Could not load parity audit script: {SCRIPT}")
+MODULE = module_from_spec(SPEC)
+SPEC.loader.exec_module(MODULE)
+audit = MODULE.audit
 
 
 def test_direct_prior_result_subset_parity(tmp_path):
