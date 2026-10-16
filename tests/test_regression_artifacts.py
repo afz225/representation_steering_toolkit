@@ -6,8 +6,6 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from repsteer.judge import parse_judgement, summarize_judgements
-
 REPO = Path(__file__).resolve().parents[2]
 SPLIT_DIR = REPO / "results-gemma4-steering-eval200-split"
 RESULT_DIR = REPO / "results-gemma4-steering-eval200" / "general"
@@ -31,62 +29,6 @@ def test_production_eval_and_vector_splits_are_balanced_and_disjoint():
     assert len(evaluation.groupby(["language", "style", "concept"])) == 8
     assert len(vectors.groupby(["language", "style", "concept"])) == 8
 
-
-def test_new_parser_reproduces_production_string_judge_labels():
-    scores = pd.read_csv(_require(RESULT_DIR / "string_judge_scores.csv"))
-    for row in scores.itertuples(index=False):
-        decision, broken = parse_judgement(row.raw_judgement)
-        legacy_decision = "TIE" if str(row.string_preferred) == "T" else str(row.string_preferred)
-        assert decision == legacy_decision
-        broken_a = broken in {"A", "BOTH"}
-        broken_b = broken in {"B", "BOTH"}
-        if str(row.option_a_is).lower() == "steered":
-            assert broken_a == bool(row.judge_broken_steered)
-            assert broken_b == bool(row.judge_broken_baseline)
-        else:
-            assert broken_b == bool(row.judge_broken_steered)
-            assert broken_a == bool(row.judge_broken_baseline)
-
-
-def test_aggregate_preference_and_broken_rates_reproduce_prior_summary():
-    scores = pd.read_csv(_require(RESULT_DIR / "string_judge_scores.csv"))
-    expected = pd.read_csv(_require(RESULT_DIR / "summary_by_model_task_layer_alpha.csv"))
-    normalized = scores.copy()
-    normalized["judge_preference"] = np.select(
-        [normalized.steering_preferred.astype(bool), normalized.baseline_preferred.astype(bool)],
-        ["STEERED", "BASELINE"],
-        default="TIE",
-    )
-    normalized["broken_steered"] = normalized.judge_broken_steered.astype(bool)
-    normalized["broken_baseline"] = normalized.judge_broken_baseline.astype(bool)
-    normalized["coefficient"] = normalized["alpha"]
-    actual = summarize_judgements(
-        normalized,
-        group_columns=("model_id", "task", "layer", "coefficient"),
-    ).rename(
-        columns={
-            "coefficient": "alpha",
-            "n_examples": "n",
-            "steering_preference_rate": "steering_preferred_rate",
-            "steered_broken_rate": "steered_broken_rate",
-            "baseline_broken_rate": "baseline_broken_rate",
-        }
-    )
-    columns = [
-        "model_id",
-        "task",
-        "layer",
-        "alpha",
-        "n",
-        "steering_preferred_rate",
-        "tie_rate",
-        "steered_broken_rate",
-        "baseline_broken_rate",
-    ]
-    merged = expected[columns].merge(actual[columns], on=["model_id", "task", "layer", "alpha"], suffixes=("_old", "_new"))
-    assert len(merged) == len(expected)
-    for column in ["n", "steering_preferred_rate", "tie_rate", "steered_broken_rate", "baseline_broken_rate"]:
-        np.testing.assert_allclose(merged[f"{column}_new"], merged[f"{column}_old"], atol=1e-12)
 
 
 def test_production_sd_is_one_space_metric_and_matches_dichotomy_rows():

@@ -91,7 +91,10 @@ def test_conditioned_vectors_and_opposite_steering(frame):
     )
     assert len(result) == 2
     assert set(result.target_value) == {"neg", "pos"}
-    assert result.steered_continuation.str.contains("steered:2.0").all()
+    for row in result.itertuples():
+        signed = 2.0 if row.target_value == "pos" else -2.0
+        assert row.signed_coefficient == signed
+        assert row.steered_continuation.endswith(f"steered:{signed}")
 
 
 def test_geometry_recovers_parallel_binary_structure(frame):
@@ -116,56 +119,54 @@ def test_geometry_recovers_parallel_binary_structure(frame):
 @pytest.mark.parametrize(
     ("text", "expected"),
     [
-        ("Reason.\nDecision: A\nBroken: NONE", ("A", "NONE")),
-        ("Decision: B\nBroken: BOTH", ("B", "BOTH")),
-        ("Decision: A\nDecision: TIE\nBroken: NONE", ("TIE", "NONE")),
+        ("Reason.\nDecision: A", ("A", None, None, True)),
+        ("Broken_A: true\nBroken_B: false\nReason: x\nDecision: B", ("B", True, False, True)),
+        ("Decision: A\nDecision: T", ("T", None, None, True)),
+        ("A is broken, so Decision: B", ("B", True, None, True)),
+        ('{"preferred": "B", "broken_a": "yes", "broken_b": 0}', ("B", True, False, True)),
+        ("answer: A", ("A", None, None, True)),
+        ("Decision: A, I think", ("T", None, None, False)),
+        ("I prefer A", ("T", None, None, False)),
     ],
 )
-def test_parse_judgement_uses_final_decision(text, expected):
-    assert parse_judgement(text) == expected
+def test_parse_judgement_production_semantics(text, expected):
+    parsed = parse_judgement(text)
+    assert (parsed["preferred"], parsed["broken_a"], parsed["broken_b"],
+            parsed["valid_decision"]) == expected
 
 
-def test_parse_judgement_rejects_unstructured_output():
-    with pytest.raises(ValueError):
-        parse_judgement("I prefer A")
-
-
-def test_judgement_summary_excludes_parse_errors():
-    from repsteer.judge import summarize_judgements
+def test_summary_skips_unlabelled_brokenness():
+    from repsteer.aggregate import summarize_by_alpha
 
     judged = pd.DataFrame(
         {
+            "setup": ["general"] * 3,
+            "task": ["style"] * 3,
             "layer": [3, 3, 3],
             "coefficient": [4.0, 4.0, 4.0],
-            "vector_condition": ["general"] * 3,
-            "judge_preference": ["STEERED", "TIE", "PARSE_ERROR"],
-            "broken_steered": [False, True, False],
-            "broken_baseline": [False, False, False],
+            "steering_preferred": [True, False, False],
+            "tie": [False, True, True],
+            "judge_broken_steered": [False, True, np.nan],
+            "judge_broken_baseline": [np.nan, np.nan, np.nan],
+            "valid_decision": [True, True, False],
         }
     )
-    summary = summarize_judgements(judged).iloc[0]
-    assert summary.n_valid == 2
-    assert summary.steering_preference_rate == 0.5
+    summary = summarize_by_alpha(judged).iloc[0]
+    assert summary.n == 3
+    assert summary.steering_preferred_rate == pytest.approx(1 / 3)
     assert summary.steered_broken_rate == 0.5
-
-
-def test_parse_judgement_preserves_decision_when_brokenness_is_missing():
-    assert parse_judgement("Reason: clear target match. Decision: A") == ("A", "UNKNOWN")
-
-
-def test_judgement_summary_all_unknown_brokenness_is_nan():
-    from repsteer.judge import summarize_judgements
-
-    judged = pd.DataFrame(
-        {
-            "layer": [0, 0],
-            "coefficient": [1.0, 1.0],
-            "vector_condition": ["general", "general"],
-            "judge_preference": ["STEERED", "BASELINE"],
-            "broken_steered": [pd.NA, pd.NA],
-            "broken_baseline": [pd.NA, pd.NA],
-        }
-    )
-    summary = summarize_judgements(judged).iloc[0]
-    assert np.isnan(summary.steered_broken_rate)
     assert np.isnan(summary.baseline_broken_rate)
+    assert summary.valid_decision_rate == pytest.approx(2 / 3)
+
+
+def test_assign_options_round_robin_matches_production_shards():
+    from repsteer.judge import assign_options
+
+    frame = pd.DataFrame({"layer": [0] * 6 + [3] * 4})
+    steered_is_a, positions = assign_options(frame, num_shards=4)
+    # Production: job = i % 4, k = position inside the job, flip = (k + job) % 2.
+    expected = [((i // 4) + (i % 4)) % 2 == 1 for i in range(10)]
+    assert steered_is_a.tolist() == expected
+    assert positions.tolist() == [i // 4 for i in range(10)]
+    per_layer, _ = assign_options(frame, num_shards=1, group_by=("layer",))
+    assert per_layer.tolist() == [k % 2 == 1 for k in range(6)] + [k % 2 == 1 for k in range(4)]

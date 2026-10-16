@@ -18,7 +18,13 @@ v_l,c = mean(h_l | x=positive, c) - mean(h_l | x=negative, c)
 If normalization is enabled, steering uses `v_l,c / ||v_l,c||`. The archive also
 retains the unnormalized class gap for normalized projection analyses. To target the
 positive class, RepSteer adds `alpha * v`; to target the negative class, it adds
-`-alpha * v`.
+`-alpha * v`. The vector is cast to the hidden-state dtype before it is scaled by the
+signed coefficient, as in the production hook.
+
+With `steering.sampling`, each class mean uses `per_class` texts drawn per layer
+from the vector split (`DataFrame.sample(per_class, random_state=seed + layer +
+offset)`, rows in file order) instead of every row; positive texts are extracted
+before negative texts in batches of `batch_size`, and means are taken in float32.
 
 This estimator is difference of means. It is canonical CAA only when the supplied
 contrast texts were constructed with the CAA contrastive prompt method. Dataset
@@ -69,3 +75,19 @@ The Decodanda engine is the reference implementation for comparisons with prior
 experiments. The native engine is self-contained and useful for unit tests or quick
 prototyping, but its values should not be presented as numerically interchangeable
 with Decodanda results.
+
+## Production protocols (Decodanda engine)
+
+`geometry.protocol: production` reproduces `geometry_olmo_reduced_full.py`. Each
+layer starts from freshly seeded `random`/NumPy generators (production ran one
+layer per process). SD runs first with `sd_seed = seed + 100*layer + pooling_index`
+and dichotomy `i` reseeded to `sd_seed + i`, using a balanced `LinearSVC`
+(`dual=False, C=1, max_iter=1000, tol=1e-3`); PS (Pearson, nshuffles 0) and CCGP
+(`n_resamplings`, `ndata`, max semantic distance 1) then run for each target in
+`target_fields` order, continuing the RNG stream without reseeding, with
+Decodanda's `svc` classifier.
+
+`geometry.protocol: matched_audit` reproduces `audit_matched_decodability_ccgp.py`:
+for the `k`-th variable, NumPy is seeded to `seed + 100*layer + k` before named
+decoding (`audit_training_fraction`, `audit_cross_validations`, `ndata`) and again
+before CCGP, so both metrics share one data budget.

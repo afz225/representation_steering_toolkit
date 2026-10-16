@@ -136,7 +136,7 @@ def generate_instruction_responses(backend: ModelBackend, benchmark: pd.DataFram
                                    direction: str = "positive",
                                    positions: PositionMode = "all") -> pd.DataFrame:
     """Generate paired response data compatible with M-IFEval-like scorers."""
-    args = vars(generation)
+    args = generation.decoding_kwargs()
     prompts = benchmark[prompt_column].astype(str).tolist()
     baseline = backend.generate(prompts, intervention=None, **args)
     rows = []

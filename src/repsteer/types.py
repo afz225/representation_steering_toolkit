@@ -5,7 +5,7 @@ from typing import Literal
 
 import numpy as np
 
-Pooling = Literal["last", "mean", "min", "max"]
+Pooling = Literal["last", "mean", "hs_mean", "min", "max"]
 PositionMode = Literal["all", "last", "generated"]
 
 

@@ -33,6 +33,9 @@ class ModelBackend(Protocol):
         do_sample: bool,
         seed: int,
         intervention: Intervention | None = None,
+        normalize_whitespace: bool = False,
+        retry_empty: bool = False,
+        pad_with_eos: bool = False,
     ) -> list[str]: ...
 
 

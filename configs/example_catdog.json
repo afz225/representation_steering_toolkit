@@ -1,6 +1,6 @@
 {
   "dataset": {
-    "path": "../synthetic_catdog_full/geometry_dataset.csv",
+    "path": "datasets/catdog/corpus.csv",
     "text_column": "text",
     "id_column": "candidate_id",
     "variables": {

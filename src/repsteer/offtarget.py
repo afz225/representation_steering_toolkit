@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from collections.abc import Mapping, Sequence
 
 import numpy as np
@@ -84,7 +84,7 @@ def measure_projection_drift(
     """
     steering_index = vector_index(steering_vectors)
     measured_indices = {name: vector_index(vectors) for name, vectors in measured_vectors.items()}
-    generation_args = asdict(generation)
+    generation_args = generation.decoding_kwargs()
     rows = []
     for row_number, (_, row) in enumerate(frame.iterrows()):
         source = str(row[steering_spec.name])

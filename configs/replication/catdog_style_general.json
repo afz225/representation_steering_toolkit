@@ -1,0 +1,197 @@
+{
+  "provenance": {
+    "production_source": "gemma4_eval200_steering.py:108-167 (build_general_vectors; sample_texts :23-29 = DataFrame.sample(32, random_state=seed+layer+offset, replace=False) over the vector pool in file order); gemma4_eval200_steering.py:249-321 (steer loop, seeds :269-275) and :51-105 (baseline cache, seed 42+1000+row), pbs_gemma4_eval200_generate.sh:35-44 (invocation), caa_conditioned_steering.py:50-62 (prompt routing: style -> style_generation_prompt, language/concept -> language_generation_prompt, caa_investigation.py:161-170), caa_model_search.py (sentence_reps/corpus_difference_vector :106-159, register_caa_hook :161-183, format_generation_prompt/generate :185-216, direction_sign :236-244, pairwise_string_prompt/StringJudge/parse_judgement :393-520, judge_mode :523-551, report_mode :554+), merge_gemma4_eval200_generations.py (judged input = layer-major concat of per-layer files), pbs_gemma4_eval200_judge.sh (num_jobs 64), repair_invalid_judgements.py, analyze_gemma4_eval200_story.py:46-56",
+    "split_recipe": "vector/evaluation cells carved by scripts/replication prepare_steering_eval200_split.py port: per (language, style, concept) cell, sample(frac=1, random_state=seed+cell_index) then take 32 vector + 25 eval rows; seed 42; verified byte-equal to production results-gemma4-steering-eval200-split. Production geometry (this config's geometry block) ran on the FULL 1041-row pool with n_per_cell 50 and auto-reduce, not on a post-split remainder; run `repsteer geometry` with the corpus path directly to mirror it. The geometry block's n_per_cell=50 + auto_reduce_n_per_cell=true mirrors --n_per_cell 50 --auto_reduce_n_per_cell from pbs_gemma4_geometry_hsmean_stride3_zscore.sh; audit_n_per_cell=40 mirrors the eval-disjoint matched audit (run on `repsteer eval-disjoint` output).",
+    "notes": "Coefficients are magnitudes signed toward the opposite pole (direction_sign(task, target) * alpha). Baseline seed = 42 + 1000 + row; steered seed = 42 + int(sha256('eval200|{setup}|{model_id}|{task}|{layer}|{alpha}|{candidate_id}')[:8],16) % 1e6 (greedy, so inert). Judge input: `repsteer merge-steered` over the style, language, concept steer tables of this setup (production layer-major order), dealt round-robin to 64 shards (num_shards 64), flip=(k+job)%2. Invalid judgements are repaired once with the strict suffix (seed 910000+ordinal, 2048 new tokens). Aggregate with `repsteer aggregate --dataset catdog`."
+  },
+  "dataset": {
+    "path": "datasets/catdog/corpus.csv",
+    "text_column": "text",
+    "id_column": "candidate_id",
+    "variables": {
+      "language": [
+        "ar",
+        "en"
+      ],
+      "style": [
+        "preschool",
+        "shakespeare"
+      ],
+      "is_dog": [
+        "0",
+        "1"
+      ]
+    }
+  },
+  "model": {
+    "model_id": "google/gemma-4-31B-it",
+    "dtype": "bfloat16",
+    "device_map": "auto",
+    "trust_remote_code": true,
+    "use_chat_template": true
+  },
+  "target": {
+    "name": "style",
+    "negative": "preschool",
+    "positive": "shakespeare",
+    "condition_on": [
+      "language"
+    ]
+  },
+  "split": {
+    "vector_per_cell": 32,
+    "eval_per_cell": 25,
+    "geometry_per_cell": null,
+    "seed": 42
+  },
+  "generation": {
+    "max_length": 512,
+    "max_new_tokens": 35,
+    "temperature": 0.7,
+    "top_p": 0.9,
+    "do_sample": false,
+    "seed": 42,
+    "normalize_whitespace": true,
+    "retry_empty": true,
+    "pad_with_eos": true,
+    "baseline_seed_offset": 1000,
+    "steered_seed_material": "eval200|{setup}|{model_id}|{task}|{layer}|{alpha}|{id}"
+  },
+  "steering": {
+    "layers": [
+      0,
+      3,
+      6,
+      9,
+      12,
+      15,
+      18,
+      21,
+      24,
+      27,
+      30,
+      33,
+      36,
+      39,
+      42,
+      45,
+      48,
+      51,
+      54,
+      57
+    ],
+    "coefficients": [
+      8.0,
+      16.0,
+      32.0,
+      64.0,
+      128.0
+    ],
+    "pooling": "mean",
+    "normalize_vector": true,
+    "positions": "all",
+    "batch_size": 4,
+    "max_length": 512,
+    "task": "style",
+    "setup": "general",
+    "target_labels": {},
+    "prompt_template_column": "language",
+    "prompt_templates": {
+      "en": "Continue the story in exactly one sentence. Keep the same subject matter. Write only the continuation sentence, with no explanation or notes:\n{safe_text}\nContinuation:",
+      "ar": "أكمل القصة بجملة واحدة فقط. حافظ على نفس الموضوع. اكتب جملة المتابعة فقط دون شرح أو ملاحظات:\n{safe_text}\nمتابعة:"
+    },
+    "sampling": {
+      "per_class": 32,
+      "seed": 42,
+      "positive_seed_offset": 101,
+      "negative_seed_offset": 102,
+      "replace_if_short": false
+    }
+  },
+  "geometry": {
+    "engine": "decodanda",
+    "layers": [
+      0,
+      3,
+      6,
+      9,
+      12,
+      15,
+      18,
+      21,
+      24,
+      27,
+      30,
+      33,
+      36,
+      39,
+      42,
+      45,
+      48,
+      51,
+      54,
+      57
+    ],
+    "poolings": [
+      "hs_mean"
+    ],
+    "zscore": true,
+    "n_resamplings": 25,
+    "ndata": 26,
+    "sd_ndata": 8,
+    "sd_training_fraction": 0.75,
+    "sd_cross_validations": 25,
+    "sd_accuracy_threshold": 0.6,
+    "protocol": "production",
+    "variables": [
+      "language_bin",
+      "style_bin",
+      "is_dog"
+    ],
+    "target_fields": [
+      "language_bin",
+      "style_bin",
+      "is_dog"
+    ],
+    "n_per_cell": 50,
+    "auto_reduce_n_per_cell": true,
+    "audit_n_per_cell": 40,
+    "audit_training_fraction": 0.75,
+    "audit_cross_validations": 25,
+    "max_sd_dichotomies": null,
+    "seed": 42,
+    "batch_size": 4,
+    "max_length": 512
+  },
+  "judge": {
+    "model": {
+      "model_id": "Qwen/Qwen3.6-27B",
+      "dtype": "bfloat16",
+      "device_map": "auto",
+      "trust_remote_code": true,
+      "use_chat_template": true
+    },
+    "attribute_descriptions": {
+      "style": {
+        "shakespeare": "Target style: elevated, ornate, literary, poetic, or archaic narrative style",
+        "preschool": "Target style: simple, plain, concrete, child-directed storybook style"
+      },
+      "language": {
+        "en": "Target language: English",
+        "ar": "Target language: Arabic"
+      },
+      "concept": {
+        "cat": "Target animal concept: cat, feline, or cat-like domestic animal",
+        "dog": "Target animal concept: dog, canine, or dog-like domestic animal"
+      }
+    },
+    "max_new_tokens": 1024,
+    "max_length": 2048,
+    "seed": 42,
+    "num_shards": 64,
+    "shard_group_by": [],
+    "repair_invalid": true,
+    "repair_max_new_tokens": 2048,
+    "repair_seed": 910000
+  }
+}

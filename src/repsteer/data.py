@@ -88,3 +88,18 @@ def write_splits(splits: dict[str, pd.DataFrame], output_dir: str | Path, datase
         "variables": {name: list(values) for name, values in dataset.variables.items()},
     }
     (output / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+
+
+def exclude_evaluation_rows(
+    frame: pd.DataFrame,
+    dataset: DatasetConfig,
+    split: SplitConfig,
+) -> pd.DataFrame:
+    """The pool minus the steering-evaluation split, in original row order.
+
+    Mirrors the production eval-disjoint matched audit input
+    (``geometry_dataset_excluding_steering_eval.csv``).
+    """
+    evaluation = split_dataset(frame, dataset, split)["evaluation"]
+    excluded = set(evaluation[dataset.id_column])
+    return frame[~frame[dataset.id_column].isin(excluded)]

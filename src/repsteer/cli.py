@@ -2,22 +2,25 @@ from __future__ import annotations
 
 import argparse
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import pandas as pd
 
 from .config import load_config
-from .data import load_dataset, split_dataset, write_splits
+from .correlations import run_correlations
+from .data import exclude_evaluation_rows, load_dataset, split_dataset, write_splits
 from .evaluation import (evaluate_multiple_choice, evaluate_perplexity,
                          generate_instruction_responses)
 from .geometry import geometry_metrics
-from .geometry_decodanda import decodanda_geometry_metrics
-from .judge import judge_steering, summarize_judgements
+from .geometry_decodanda import matched_audit_layer, production_layer_geometry, select_examples
+from .aggregate import run_aggregate, summarize_by_alpha
+from .judge import judge_steering
 from .models.huggingface import HuggingFaceBackend
 from .offtarget import (AttributeLabels, judge_offtarget_effects,
                         measure_projection_drift, summarize_offtarget_effects,
                         summarize_projection_drift)
-from .steering import run_steering
+from .steering import order_for_judging, run_steering
 from .vectors import build_vectors, load_vectors, save_vectors
 
 
@@ -52,7 +55,7 @@ def command_vectors(args) -> None:
                             config.dataset.text_column, config.target,
                             config.steering.layers, config.steering.pooling,
                             config.steering.normalize_vector, config.steering.batch_size,
-                            config.steering.max_length)
+                            config.steering.max_length, sampling=config.steering.sampling)
     Path(args.output).parent.mkdir(parents=True, exist_ok=True)
     save_vectors(vectors, args.output)
 
@@ -61,27 +64,92 @@ def command_steer(args) -> None:
     config = load_config(args.config)
     output = run_steering(HuggingFaceBackend(config.model), _frame(config, args.dataset),
                           config.dataset.text_column, config.dataset.id_column, config.target,
-                          load_vectors(args.vectors), config.steering, config.generation)
+                          load_vectors(args.vectors), config.steering, config.generation,
+                          model_id=config.model.model_id)
     Path(args.output).parent.mkdir(parents=True, exist_ok=True)
     output.to_csv(args.output, index=False)
+
+
+def command_merge_steered(args) -> None:
+    merged = order_for_judging(pd.read_csv(path, keep_default_na=False) for path in args.input)
+    Path(args.output).parent.mkdir(parents=True, exist_ok=True)
+    merged.to_csv(args.output, index=False)
 
 
 def command_judge(args) -> None:
     config = load_config(args.config)
     if config.judge is None:
         raise ValueError("The config has no judge section")
-    output = judge_steering(HuggingFaceBackend(config.judge.model), pd.read_csv(args.input),
-                            config.judge, config.generation,
-                            id_column=config.dataset.id_column, target_name=config.target.name)
+    output = judge_steering(HuggingFaceBackend(config.judge.model),
+                            pd.read_csv(args.input, keep_default_na=False), config.judge,
+                            judge_model_id=config.judge.model.model_id)
     Path(args.output).parent.mkdir(parents=True, exist_ok=True)
     output.to_csv(args.output, index=False)
-    summarize_judgements(output).to_csv(Path(args.output).with_suffix(".summary.csv"), index=False)
+    summarize_by_alpha(output).to_csv(Path(args.output).with_suffix(".summary.csv"), index=False)
+
+
+def command_aggregate(args) -> None:
+    tables = run_aggregate(args.dataset, args.judged, args.output_dir,
+                           alpha_column=args.alpha_column,
+                           classifier_scores_path=args.classifier_scores,
+                           geometry_rows_path=args.geometry_rows,
+                           matched_metrics_path=args.matched_metrics)
+    print(json.dumps({name: len(table) for name, table in tables.items()}, indent=2))
+
+
+def _decodanda_geometry(config, backend, frame, args, output) -> None:
+    geometry = config.geometry
+    fields = list(geometry.variables or config.dataset.variables)
+    targets = list(geometry.target_fields or fields)
+    audit = geometry.protocol == "matched_audit"
+    n_per_cell = (geometry.audit_n_per_cell or geometry.n_per_cell) if audit else geometry.n_per_cell
+    selected, effective_n, counts = select_examples(
+        frame, fields, n_per_cell, geometry.seed,
+        text_column=config.dataset.text_column,
+        auto_reduce=geometry.auto_reduce_n_per_cell and not audit,
+        value_order=config.dataset.variables)
+    counts.to_csv(output / "counts.csv", index=False)
+    texts = selected[config.dataset.text_column].tolist()
+    rows: list[dict] = []
+    dichotomy_rows: list[dict] = []
+    for layer in geometry.layers:
+        for pooling_index, pooling in enumerate(geometry.poolings):
+            reps = backend.sentence_representations(
+                texts, layer, pooling, geometry.batch_size, geometry.max_length)
+            if audit:
+                rows.extend(matched_audit_layer(
+                    reps, selected, geometry, condition_fields=fields, layer=layer,
+                    n_per_cell=effective_n, pooling=pooling, model_id=config.model.model_id,
+                    dataset_csv=str(args.dataset)))
+            else:
+                summary, dichotomies = production_layer_geometry(
+                    reps, selected, geometry, condition_fields=fields, target_fields=targets,
+                    layer=layer, pooling=pooling, pooling_index=pooling_index,
+                    effective_n=effective_n, model_id=config.model.model_id)
+                rows.extend(summary)
+                dichotomy_rows.extend(dichotomies)
+    if audit:
+        pd.DataFrame(rows).to_csv(output / "matched_metrics.csv", index=False)
+    else:
+        pd.DataFrame(rows).to_csv(output / "geometry_rows.csv", index=False)
+        pd.DataFrame(dichotomy_rows).to_csv(output / "dichotomy_rows.csv", index=False)
 
 
 def command_geometry(args) -> None:
     config = load_config(args.config)
+    overrides = {}
+    if args.protocol:
+        overrides["protocol"] = args.protocol
+    if args.layers:
+        overrides["layers"] = tuple(int(layer) for layer in args.layers.split(","))
+    if overrides:
+        config = replace(config, geometry=replace(config.geometry, **overrides))
     backend = HuggingFaceBackend(config.model)
     frame = _frame(config, args.dataset).reset_index(drop=True)
+    output = _output_dir(args.output_dir)
+    if config.geometry.engine == "decodanda":
+        _decodanda_geometry(config, backend, frame, args, output)
+        return
     all_metrics = []
     texts = frame[config.dataset.text_column].astype(str).tolist()
     variables = list(config.dataset.variables)
@@ -89,20 +157,24 @@ def command_geometry(args) -> None:
         for layer in config.geometry.layers:
             reps = backend.sentence_representations(
                 texts, layer, pooling, config.geometry.batch_size, config.geometry.max_length)
-            if config.geometry.engine == "decodanda":
-                metrics = decodanda_geometry_metrics(reps, frame, variables, config.geometry)
-            else:
-                metrics = geometry_metrics(
-                    reps, frame, variables, n_resamplings=config.geometry.n_resamplings,
-                    zscore=config.geometry.zscore,
-                    max_per_condition=config.geometry.max_samples_per_condition,
-                    max_sd_dichotomies=config.geometry.max_sd_dichotomies,
-                    seed=config.geometry.seed)
+            metrics = geometry_metrics(
+                reps, frame, variables, n_resamplings=config.geometry.n_resamplings,
+                zscore=config.geometry.zscore,
+                max_per_condition=config.geometry.max_samples_per_condition,
+                max_sd_dichotomies=config.geometry.max_sd_dichotomies,
+                seed=config.geometry.seed)
             metrics.insert(0, "pooling", pooling)
             metrics.insert(0, "layer", layer)
             all_metrics.append(metrics)
-    pd.concat(all_metrics, ignore_index=True).to_csv(
-        _output_dir(args.output_dir) / "geometry_metrics.csv", index=False)
+    pd.concat(all_metrics, ignore_index=True).to_csv(output / "geometry_metrics.csv", index=False)
+
+
+def command_eval_disjoint(args) -> None:
+    config = load_config(args.config)
+    remainder = exclude_evaluation_rows(_frame(config, args.dataset), config.dataset, config.split)
+    Path(args.output).parent.mkdir(parents=True, exist_ok=True)
+    remainder.to_csv(args.output, index=False)
+    print(json.dumps({"rows": len(remainder), "output": args.output}, indent=2))
 
 
 def command_perplexity(args) -> None:
@@ -141,6 +213,12 @@ def command_instruction_generate(args) -> None:
         direction=args.direction, positions=config.steering.positions)
     Path(args.output).parent.mkdir(parents=True, exist_ok=True)
     output.to_csv(args.output, index=False)
+
+
+def command_correlations(args) -> None:
+    rows = run_correlations(args.dataset, args.geometry, args.judged, args.output_dir,
+                            audit_metrics_path=getattr(args, "audit_metrics", None))
+    print(json.dumps({"rows": len(rows)}, indent=2))
 
 
 def _named_paths(values: list[str]) -> dict[str, str]:
@@ -223,9 +301,35 @@ def build_parser() -> argparse.ArgumentParser:
     judge = sub.add_parser("judge", help="Judge paired steering outputs")
     judge.add_argument("--config", required=True); judge.add_argument("--input", required=True)
     judge.add_argument("--output", required=True); judge.set_defaults(func=command_judge)
+    merge = sub.add_parser(
+        "merge-steered",
+        help="Concatenate per-task steer tables in production judged-input order (layer, input)")
+    merge.add_argument("--input", action="append", required=True,
+                       help="steer output CSV; repeat in production task order")
+    merge.add_argument("--output", required=True); merge.set_defaults(func=command_merge_steered)
+    aggregate = sub.add_parser(
+        "aggregate", help="Production outcome tables from judged rows (mean-over-alpha / best alpha)")
+    aggregate.add_argument("--dataset", required=True, choices=("catdog", "toxicity"))
+    aggregate.add_argument("--judged", action="append", required=True)
+    aggregate.add_argument("--alpha-column", default="coefficient")
+    aggregate.add_argument("--classifier-scores", default=None,
+                           help="toxicity: CSV with text_hash,toxicity_probability (XLM-R)")
+    aggregate.add_argument("--geometry-rows", default=None,
+                           help="toxicity: geometry_rows.csv to join PS/CCGP/SD at the best alpha")
+    aggregate.add_argument("--matched-metrics", default=None,
+                           help="toxicity: matched_metrics.csv to join decodability")
+    aggregate.add_argument("--output-dir", required=True); aggregate.set_defaults(func=command_aggregate)
     geometry = sub.add_parser("geometry", help="Extract representations and compute geometry")
     geometry.add_argument("--config", required=True); geometry.add_argument("--dataset", required=True)
-    geometry.add_argument("--output-dir", required=True); geometry.set_defaults(func=command_geometry)
+    geometry.add_argument("--output-dir", required=True)
+    geometry.add_argument("--protocol", choices=("production", "matched_audit"),
+                          help="Override geometry.protocol (decodanda engine)")
+    geometry.add_argument("--layers", help="Comma-separated override of geometry.layers")
+    geometry.set_defaults(func=command_geometry)
+    disjoint = sub.add_parser(
+        "eval-disjoint", help="Write the dataset minus its steering-evaluation split rows")
+    disjoint.add_argument("--config", required=True); disjoint.add_argument("--dataset")
+    disjoint.add_argument("--output", required=True); disjoint.set_defaults(func=command_eval_disjoint)
     perplexity = sub.add_parser("perplexity", help="Measure token-weighted perplexity after steering")
     _common_benchmark(perplexity); perplexity.add_argument("--text-column")
     perplexity.set_defaults(func=command_perplexity)
@@ -250,6 +354,15 @@ def build_parser() -> argparse.ArgumentParser:
     offjudge.add_argument("--config", required=True); offjudge.add_argument("--input", required=True)
     offjudge.add_argument("--labels", required=True); offjudge.add_argument("--output-dir", required=True)
     offjudge.set_defaults(func=command_offtarget_judge)
+    correlations = sub.add_parser(
+        "correlations",
+        help="Full + partial geometry-vs-outcome correlations with production stars")
+    correlations.add_argument("--dataset", required=True, choices=("catdog", "toxicity"))
+    correlations.add_argument("--geometry", required=True)
+    correlations.add_argument("--judged", required=True)
+    correlations.add_argument("--audit-metrics", default=None)
+    correlations.add_argument("--output-dir", required=True)
+    correlations.set_defaults(func=command_correlations)
     return parser
 
 

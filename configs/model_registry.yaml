@@ -1,0 +1,47 @@
+# Model registry: maps Hugging Face model ids (exact or fnmatch pattern) to
+# backend profiles applied on top of the experiment config's `model` section.
+#
+# Resolution order: exact model_id match, then the first pattern match in file
+# order, then the built-in attribute walk in
+# src/repsteer/models/huggingface.py (_LAYER_PATHS).
+#
+# Profile fields (all optional; unset means "leave the config value alone"):
+#   layer_path         attribute path walked from the model object,
+#                      e.g. "model.language_model.layers"
+#   layer_regex        regex searched against model.named_modules() names;
+#                      matches are collected in deterministic natural order.
+#                      Mutually exclusive with layer_path in practice
+#                      (layer_path wins when both are set).
+#   tokenizer_id       tokenizer repo id when it differs from model_id
+#   dtype              torch dtype name, e.g. "bfloat16"
+#   use_chat_template  apply the tokenizer chat template to prompts
+#   trust_remote_code  pass trust_remote_code=True to from_pretrained
+#
+# Provenance: the google/gemma* profile mirrors the production dissemination
+# runs (scripts/pbs_gemma4_steering.sh chain), which resolved
+# model.language_model.layers (n=60) on google/gemma-4-31B-it with the chat
+# template enabled and bfloat16 weights.
+profiles:
+  "google/gemma*":
+    layer_path: model.language_model.layers
+    use_chat_template: true
+    dtype: bfloat16
+
+  "meta-llama/Llama-2*":
+    layer_path: model.layers
+    use_chat_template: false
+    dtype: bfloat16
+
+  "meta-llama/Meta-Llama-3*":
+    layer_path: model.layers
+    use_chat_template: true
+    dtype: bfloat16
+
+  "gpt2*":
+    layer_path: transformer.h
+    use_chat_template: false
+    dtype: float32
+
+  "chatlm/mlp-demo":
+    layer_regex: 'model\.layers\.\d+\.mlp$'
+    use_chat_template: true

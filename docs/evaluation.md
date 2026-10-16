@@ -2,17 +2,31 @@
 
 ## Pairwise steering judge
 
-`repsteer judge` compares a baseline continuation with its steered counterpart. A/B
-placement is deterministic but randomized by example ID and seed. The generated
-judge response is parsed from its final decision rather than answer-token logits.
+`repsteer judge` compares a baseline continuation with its steered counterpart using
+the production pairwise prompt. A/B placement follows the production shard protocol
+(`judge.num_shards`, `judge.shard_group_by`): row i of a group goes to shard
+`i % n` at position `k = i // n`, and the steered text is option A iff `k + shard`
+is odd. The generated judge response is parsed from its final `Decision` line
+rather than answer-token logits; responses without a valid decision count as ties
+with `valid_decision = false` and can be re-judged once (`judge.repair_invalid`).
 
-The summary reports:
+Each row carries `option_a_is`, `string_preferred`, `steering_preferred`,
+`baseline_preferred`, `tie`, `judge_broken_steered`, `judge_broken_baseline`
+(empty when the judge gave no label), `valid_decision` and `raw_judgement`.
+`judged.summary.csv` and `repsteer aggregate` report, per setup/task/layer/alpha:
 
-- `steering_preference_rate`;
-- `baseline_preference_rate`;
-- `tie_rate`;
-- baseline and steered broken-output rates;
-- judge parse-error rate.
+- `steering_preferred_rate` and `tie_rate`;
+- steered and baseline broken-output rates over rows with a brokenness label;
+- `valid_decision_rate`.
+
+`repsteer aggregate --dataset catdog` adds the per-(setup, task, layer) table of
+`analyze_gemma4_eval200_story.py` (`*_mean_alpha` = n-weighted mean over alpha;
+`best_alpha`/`best_success`/`best_broken` at the alpha with the highest success,
+then lowest broken rate, then smallest alpha). `--dataset toxicity` reproduces
+`analyze_gemma4_toxicity_replication.py`: `success`, `broken_rate` (an unlabelled
+brokenness counts as not broken), `tie_rate`, optional `classifier_target_delta`
+(`--classifier-scores`), the best alpha per (setup, layer), and with
+`--geometry-rows`/`--matched-metrics` the joined `toxicity_best_alpha_geometry.csv`.
 
 Broken output means unusable prose due to emptiness, incoherence, semantic nonsense,
 severe grammar failure, hallucinated labels or boilerplate, pathological repetition,

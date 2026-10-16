@@ -36,19 +36,25 @@ def backend_without_loading():
     return backend
 
 
-def test_attention_mask_aware_pooling_with_left_padding():
+def test_attention_mask_aware_pooling_matches_production_semantics():
     backend = backend_without_loading()
+    # Extraction pads with the tokenizer default (right for most decoders).
     hidden = torch.tensor(
         [
-            [[99.0, 99.0], [1.0, 3.0], [5.0, 7.0]],
-            [[99.0, 99.0], [99.0, 99.0], [2.0, 4.0]],
+            [[1.0, 3.0], [5.0, 7.0], [99.0, 99.0]],
+            [[2.0, 4.0], [99.0, 99.0], [99.0, 99.0]],
         ]
     )
-    mask = torch.tensor([[0, 1, 1], [0, 0, 1]])
+    mask = torch.tensor([[1, 1, 0], [1, 0, 0]])
+    for pooling in ("mean", "hs_mean"):
+        np.testing.assert_allclose(backend._pool(hidden, mask, pooling), [[3, 5], [2, 4]])
     np.testing.assert_allclose(backend._pool(hidden, mask, "last"), [[5, 7], [2, 4]])
-    np.testing.assert_allclose(backend._pool(hidden, mask, "mean"), [[3, 5], [2, 4]])
     np.testing.assert_allclose(backend._pool(hidden, mask, "min"), [[1, 3], [2, 4]])
     np.testing.assert_allclose(backend._pool(hidden, mask, "max"), [[5, 7], [2, 4]])
+    # Production hs_last/sentence_reps index position attention_mask.sum - 1.
+    left = torch.tensor([[0, 1, 1], [0, 0, 1]])
+    np.testing.assert_allclose(backend._pool(hidden, left, "last"), [[5, 7], [2, 4]])
+    np.testing.assert_allclose(backend._pool(hidden.flip(1), left, "min"), [[1, 3], [2, 4]])
 
 
 @pytest.mark.parametrize("position", ["all", "last", "generated"])

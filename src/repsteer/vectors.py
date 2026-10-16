@@ -8,6 +8,7 @@ from typing import Iterable
 import numpy as np
 import pandas as pd
 
+from .config import VectorSamplingConfig
 from .models.base import ModelBackend
 from .types import Pooling, VariableSpec
 
@@ -41,6 +42,26 @@ def _condition_groups(frame: pd.DataFrame, names: tuple[str, ...]):
         yield tuple(sorted((name, str(value)) for name, value in zip(names, values))), group
 
 
+def _contrast_texts(
+    group: pd.DataFrame,
+    text_column: str,
+    mask: np.ndarray,
+    layer: int,
+    offset: int,
+    sampling: VectorSamplingConfig | None,
+) -> list[str]:
+    """Class texts in file order, or the production ``DataFrame.sample`` draw."""
+
+    part = group[mask]
+    if sampling is not None:
+        n = sampling.per_class
+        replace = len(part) < n
+        if replace and not sampling.replace_if_short:
+            raise ValueError(f"Need {n} contrast rows; found {len(part)}")
+        part = part.sample(n=n, random_state=sampling.seed + layer + offset, replace=replace)
+    return part[text_column].astype(str).tolist()
+
+
 def build_vectors(
     backend: ModelBackend,
     frame: pd.DataFrame,
@@ -51,9 +72,18 @@ def build_vectors(
     normalize: bool = True,
     batch_size: int = 8,
     max_length: int = 512,
+    sampling: VectorSamplingConfig | None = None,
 ) -> list[SteeringVector]:
-    """Build positive-minus-negative difference-of-means vectors."""
+    """Build positive-minus-negative difference-of-means vectors.
 
+    Mirrors ``SearchCaaModel.corpus_difference_vector``: positive texts are
+    extracted (in batches) before negative texts, ``vec = pos.mean(0) -
+    neg.mean(0)`` in float32, and normalization divides by
+    ``float(np.linalg.norm(vec))``. With ``sampling`` each class is drawn per
+    layer by ``DataFrame.sample(per_class, random_state=seed + layer + offset)``.
+    """
+
+    layers = list(layers)
     vectors: list[SteeringVector] = []
     for condition, group in _condition_groups(frame, spec.condition_on):
         labels = group[spec.name].astype(str).to_numpy()
@@ -61,15 +91,21 @@ def build_vectors(
         pos_mask = labels == spec.positive
         if not neg_mask.any() or not pos_mask.any():
             raise ValueError(f"Condition {dict(condition)} does not contain both target classes")
-        texts = group[text_column].astype(str).tolist()
         for layer in layers:
-            reps = backend.sentence_representations(
-                texts, layer, pooling, batch_size=batch_size, max_length=max_length
-            )
-            values = reps[pos_mask].mean(axis=0) - reps[neg_mask].mean(axis=0)
+            offsets = (0, 0) if sampling is None else (
+                sampling.positive_seed_offset, sampling.negative_seed_offset)
+            pos_texts = _contrast_texts(group, text_column, pos_mask, layer, offsets[0], sampling)
+            neg_texts = _contrast_texts(group, text_column, neg_mask, layer, offsets[1], sampling)
+            pos = backend.sentence_representations(
+                pos_texts, layer, pooling, batch_size=batch_size, max_length=max_length
+            ).astype(np.float32)
+            neg = backend.sentence_representations(
+                neg_texts, layer, pooling, batch_size=batch_size, max_length=max_length
+            ).astype(np.float32)
+            values = pos.mean(axis=0) - neg.mean(axis=0)
             norm = float(np.linalg.norm(values))
-            if norm <= 1e-12:
-                raise ValueError(f"Zero-norm vector at layer {layer}, condition {dict(condition)}")
+            if norm == 0 or not np.isfinite(norm):
+                raise ValueError(f"Bad vector norm {norm} at layer {layer}, condition {dict(condition)}")
             if normalize:
                 values = values / norm
             vectors.append(
@@ -78,8 +114,8 @@ def build_vectors(
                     variable=spec.name,
                     condition=tuple(sorted(condition)),
                     values=values.astype(np.float32),
-                    negative_count=int(neg_mask.sum()),
-                    positive_count=int(pos_mask.sum()),
+                    negative_count=len(neg_texts),
+                    positive_count=len(pos_texts),
                     class_gap=norm,
                 )
             )

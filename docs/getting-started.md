@@ -96,7 +96,7 @@ repsteer judge --config config.json \
 
 Steering always targets the opposite class of each held-out source example. The
 judge writes row-level labels and `judged.summary.csv` with preference, tie,
-broken-output, and parse-error rates.
+broken-output, and valid-decision rates.
 
 ## 7. Compute geometry
 
@@ -106,8 +106,14 @@ repsteer geometry --config config.json \
   --output-dir results/geometry
 ```
 
-The result is a long-form `geometry_metrics.csv` containing layer, pooling, metric,
-variable or dichotomy identity, resampling, and value columns.
+With the Decodanda engine (default `protocol: production`) the output directory
+holds `geometry_rows.csv` (one row per layer, pooling, and target: `PS`,
+`CCGP_nontargeted`, `SD`, `SD_mean_acc` plus per-variable statistics, the
+production column layout), `dichotomy_rows.csv` (per-dichotomy SD accuracies), and
+`counts.csv`. `--protocol matched_audit` writes `matched_metrics.csv`
+(`decodability_mean`, `ccgp_mean`, ... per layer and target). The native engine
+writes a long-form `geometry_metrics.csv` (layer, pooling, metric, variable or
+dichotomy identity, resampling, value).
 
 ## Common checks
 

@@ -63,6 +63,48 @@ interchangeably.
 
 The default Decodanda geometry backend reproduces the project procedure: Pearson PS, one-out CCGP, all balanced dichotomies for SD, and separate SD classifier settings. Z-scoring is enabled by default and follows Decodanda: train-split statistics for decoding and pair-local statistics for PS.
 
+## Reproducing the paper
+
+`configs/replication/` holds one JSON config per dataset × task × vector setup
+(`catdog_{style,concept,language}_{general,conditioned}.json`,
+`toxicity_{general,conditioned}.json`), with every hyperparameter the paper used:
+split sizes, steering layers and coefficients, contrast-sample counts, prompts,
+generation settings, Decodanda geometry settings, the matched decodability/CCGP
+audit budget, and the judge. Each value is traced to the production script that
+produced it in [configs/replication/README.md](configs/replication/README.md).
+
+```bash
+# CPU-only checks of data, splits, and configs (no model downloads)
+bash scripts/replication/catdog_full.sh --validate-only
+TOXICITY_DATA_DIR=/path/to/labeled bash scripts/replication/toxicity_full.sh --validate-only
+
+# Full replication (GPU; runs every stage through the repsteer CLI)
+TOXICITY_DATA_DIR=/path/to/labeled bash scripts/replication/run_all.sh
+```
+
+The scripts are plain bash with no scheduler directives; each stage is
+independent and per-layer geometry can be parallelized (see
+[scripts/replication/README.md](scripts/replication/README.md)).
+
+## Datasets
+
+- `datasets/catdog/corpus.csv`: the synthetic style × concept × language corpus
+  (1,041 sentences, MIT). Generation details: [datasets/catdog/DATASET.md](datasets/catdog/DATASET.md).
+- Toxicity: the texts come from `textdetox/multilingual_toxicity_dataset` (en, ar),
+  whose upstream sources do not permit redistribution, so no texts are shipped.
+  `datasets/toxicity/` contains the re-annotation prompt, a split builder, and a
+  fingerprint manifest that checks a locally rebuilt split matches the paper's
+  split exactly. See [datasets/toxicity/DATASET.md](datasets/toxicity/DATASET.md).
+
+## Adding a model
+
+Models are resolved through `configs/model_registry.yaml`. Each entry maps a model
+id or a glob pattern to the module to steer and read from, given either as an
+attribute path (`layer_path: model.layers`) or as a regex over
+`named_modules()` (`layer_regex: 'model\.layers\.\d+\.mlp$'`), plus tokenizer,
+dtype, and chat-template defaults. New architectures need a registry entry, not
+code changes. See [Extending RepSteer](docs/extending.md#add-a-model-via-yaml).
+
 ## Documentation
 
 - [Getting started](docs/getting-started.md)
