@@ -87,6 +87,10 @@ prompt at a time, tokenized without padding, greedy unless `do_sample`.
 | `task`, `setup` | Labels written to the `task`/`setup` output columns (defaults: the target name; `general` without conditioning, else `conditioned`). The judge renders its target line from `task`. |
 | `target_labels` | Maps target values to the `target_attribute` column (e.g. `{"0": "cat", "1": "dog"}`). |
 | `sampling` | Optional contrast sampling: `per_class`, `seed`, `positive_seed_offset`, `negative_seed_offset`, `replace_if_short`. Each class of each condition group is drawn per layer with `DataFrame.sample(per_class, random_state=seed + layer + offset)` in file order; without it every row is used. |
+| `relative_depths` | Optional, instead of `layers`: depths in (0, 1] resolved to `round(depth × n_layers)` (clipped, deduplicated). |
+| `alpha_mode` | `absolute` (default; `coefficients` used as-is) or `relative_norm` (each coefficient is an `alpha_rel` multiplier of the layer's median residual norm stored in the vectors archive as `median_norm`). |
+| `norm_calibration_texts`, `norm_calibration_dataset` | `relative_norm` calibration: number of texts (default 128) drawn deterministically from the vector dataset, or from `norm_calibration_dataset` when set (keeps coefficients identical across runs that differ only in their vector texts). |
+| `batched_grid` | `true`: one batched generation per eval prompt covering the baseline and every layer × coefficient row (default `false`, the production per-row path). |
 
 A prompt template may use `{text}`, `{safe_text}` (whitespace-collapsed text),
 `{source}`, `{target}`, and any dataset column. Vectors are `mean(positive) −

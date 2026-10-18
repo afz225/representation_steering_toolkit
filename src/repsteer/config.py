@@ -136,6 +136,9 @@ class SteeringConfig:
     # Number of calibration texts for the median norm, drawn deterministically
     # from the vector split (front of each cell's vector block, cell-major).
     norm_calibration_texts: int = 128
+    # Optional CSV whose texts calibrate median_norm instead of the vector dataset (keeps
+    # absolute coefficients identical across runs that differ only in their vector texts).
+    norm_calibration_dataset: str | None = None
     # False (production): one generate call per (layer, alpha, row).
     # True: generate_steered_batch with one batch per eval prompt covering the
     # baseline plus all layer×alpha rows (row layout identical to production).

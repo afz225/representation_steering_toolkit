@@ -128,7 +128,9 @@ def command_vectors(args) -> None:
         if norms is None:
             raise ValueError("alpha_mode=relative_norm needs a backend with residual_norms")
         calibrator = steering.norm_calibration_texts
-        texts = _norm_calibration_texts(frame, config.dataset.text_column, calibrator)
+        calibration_frame = (_frame(config, steering.norm_calibration_dataset)
+                             if steering.norm_calibration_dataset else frame)
+        texts = _norm_calibration_texts(calibration_frame, config.dataset.text_column, calibrator)
         medians = norms(texts, layers, batch_size=steering.batch_size,
                         max_length=steering.max_length)
         vectors = [dataclasses_replace(vector, median_norm=medians[vector.layer])
