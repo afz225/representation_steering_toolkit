@@ -28,6 +28,26 @@ brokenness counts as not broken), `tie_rate`, optional `classifier_target_delta`
 (`--classifier-scores`), the best alpha per (setup, layer), and with
 `--geometry-rows`/`--matched-metrics` the joined `toxicity_best_alpha_geometry.csv`.
 
+`repsteer aggregate --dataset generic` is the dataset-agnostic form used by the
+scaling study: per (model_id, concept, setup, layer, relative_depth) it writes
+`generic_summary_by_alpha.csv` and `generic_layer_summary.csv` (mean over alpha and
+best alpha, same tie-breaks). Success and tie rates are over valid decisions only;
+unparsed judgements are reported through `valid_decision_rate`, not counted as losses.
+
+`repsteer build-cells --concept C --target-field F --layer-summary ... --geometry-rows
+... --matched-metrics ... --output cells_C.csv` joins one concept's layer summary with
+its target field's production geometry (PS, SD, SD mean acc) and matched-audit
+decodability/CCGP per (model_id, layer). It fails when a layer lacks geometry, when a
+target has several rows per layer, or when realized relative depths disagree.
+
+`repsteer analyze --cells cells_*.csv [--model-meta M --concept-meta K] --output-dir D`
+runs the pre-registered analysis (`pip install 'repsteer[analysis]'`): crossed mixed
+models of each outcome on within-cell-standardised decodability plus one metric with
+likelihood-ratio tests (naive and boundary-mixture p, Holm over 4 metrics × 2
+outcomes), within-cell partial correlations pooled by REML random effects, an
+all-metric model with VIFs, between-cell and moderator models (when metadata is
+given), and the same primary tests on best-alpha outcomes.
+
 Broken output means unusable prose due to emptiness, incoherence, semantic nonsense,
 severe grammar failure, hallucinated labels or boilerplate, pathological repetition,
 truncation, or artifact corruption. Missing the target attribute is not brokenness.

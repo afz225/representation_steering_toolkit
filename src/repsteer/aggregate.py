@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import hashlib
 from pathlib import Path
+from typing import Sequence
 
 import numpy as np
 import pandas as pd
@@ -134,6 +135,114 @@ def toxicity_best_alpha_geometry(best: pd.DataFrame, geometry_rows: pd.DataFrame
     decodability = matched_metrics[matched_metrics.target_field.eq(target_field)][
         ["layer", "decodability_mean"]].rename(columns={"decodability_mean": "decodability"})
     return best.merge(geometry, on="layer").merge(decodability, on="layer")
+
+
+def generic_summary(frame: pd.DataFrame, group_columns=("model_id", "concept", "setup", "layer"),
+                    alpha_column: str = "coefficient", id_column: str | None = None,
+                    passthrough: tuple[str, ...] = ("relative_depth", "alpha_rel")) -> pd.DataFrame:
+    """Dataset-agnostic per-alpha outcome table for the scaling study.
+
+    One row per (``group_columns`` + present passthrough columns + ``alpha_column``)
+    with ``n`` and the production rates: ``steering_preferred_rate`` (success),
+    ``tie_rate``, ``steered_broken_rate`` / ``baseline_broken_rate`` (over rows
+    carrying a brokenness label), ``valid_decision_rate``. ``id_column`` (e.g.
+    ``candidate_id``) makes ``n`` count unique ids instead of rows.
+    """
+
+    missing = [column for column in (*group_columns, alpha_column, "steering_preferred",
+                                     "tie", "judge_broken_steered", "judge_broken_baseline",
+                                     "valid_decision") if column not in frame.columns]
+    if missing:
+        raise KeyError(f"Judged table lacks required columns: {missing}")
+    data = pd.DataFrame({column: frame[column] for column in (*group_columns, alpha_column)})
+    for name in passthrough:
+        if name in frame.columns and name != alpha_column:
+            data[name] = frame[name]
+    for column in (*group_columns, *passthrough):
+        if column in data and data[column].dtype == object:
+            data[column] = data[column].astype(str)
+    data["valid_decision"] = _truth(frame["valid_decision"]).astype(float)
+    # Unparsed judgements are missing, not losses: success/tie rates are over valid
+    # decisions only (valid_decision_rate reports the missing share).
+    valid = data["valid_decision"] == 1.0
+    data["steering_preferred"] = _truth(frame["steering_preferred"]).astype(float).where(valid)
+    data["tie"] = _truth(frame["tie"]).astype(float).where(valid)
+    data["judge_broken_steered"] = _labelled(frame["judge_broken_steered"])
+    data["judge_broken_baseline"] = _labelled(frame["judge_broken_baseline"])
+    aggregations = dict(
+        steering_preferred_rate=("steering_preferred", "mean"),
+        tie_rate=("tie", "mean"),
+        steered_broken_rate=("judge_broken_steered", "mean"),
+        baseline_broken_rate=("judge_broken_baseline", "mean"),
+        valid_decision_rate=("valid_decision", "mean"),
+    )
+    if id_column is not None:
+        data[id_column] = frame[id_column].astype(str)
+        aggregations = {"n": (id_column, "nunique"), **aggregations}
+    else:
+        aggregations = {"n": ("steering_preferred", "size"), **aggregations}
+    keys = [column for column in data.columns
+            if column not in ("steering_preferred", "tie", "judge_broken_steered",
+                              "judge_broken_baseline", "valid_decision")]
+    return data.groupby(keys, dropna=False, sort=True).agg(**aggregations).reset_index()
+
+
+def generic_layer_summary(summary: pd.DataFrame,
+                          group_columns=("model_id", "concept", "setup", "layer"),
+                          alpha_column: str = "coefficient",
+                          passthrough: tuple[str, ...] = ("relative_depth",)) -> pd.DataFrame:
+    """Mean-over-alpha plus best-alpha outcomes per (``group_columns``, passthrough).
+
+    ``summary`` is a :func:`generic_summary` table. For every group this reports the
+    n-weighted mean over the alpha levels (``*_mean_alpha``) and the best alpha by
+    success desc, broken rate asc, alpha asc (``best_alpha`` / ``best_success`` /
+    ``best_broken``). ``relative_depth`` is part of the group key (the steering grid
+    samples one relative depth per layer), while other passthrough columns such as
+    ``alpha_rel`` describe the best alpha and are attached to it.
+    """
+
+    group_keys = list(group_columns)
+    depth_key = "relative_depth" if "relative_depth" in summary.columns else None
+    if depth_key:
+        group_keys.append(depth_key)
+    carried = [column for column in passthrough if column in summary.columns
+               and column not in group_keys]
+    rows = []
+    for key_values, group in summary.groupby(group_keys, dropna=False, sort=True):
+        if not isinstance(key_values, tuple):
+            key_values = (key_values,)
+        row = dict(zip(group_keys, key_values))
+        row["n_config_observations"] = int(pd.to_numeric(group["n"]).sum())
+        for metric in RATE_METRICS:
+            row[f"{metric}_mean_alpha"] = _weighted_mean(group, metric)
+        best = group.sort_values(["steering_preferred_rate", "steered_broken_rate", alpha_column],
+                                 ascending=[False, True, True]).iloc[0]
+        row.update({"best_alpha": float(best[alpha_column]),
+                    "best_success": float(best["steering_preferred_rate"]),
+                    "best_broken": float(best["steered_broken_rate"])})
+        for column in carried:
+            if column == "alpha_rel":
+                # alpha_rel describes the best alpha itself when present.
+                row[column] = best.get(column, np.nan)
+            else:
+                row[column] = best[column]
+        rows.append(row)
+    return pd.DataFrame(rows)
+
+
+def run_generic_aggregate(frame: pd.DataFrame, output_dir: str | Path,
+                          group_columns: Sequence[str] = ("model_id", "concept", "setup", "layer"),
+                          alpha_column: str = "coefficient", id_column: str | None = None) -> dict[str, pd.DataFrame]:
+    """Write the generic scaling-study outcome tables and return them."""
+
+    passthrough = tuple(name for name in ("relative_depth", "alpha_rel") if name in frame.columns)
+    summary = generic_summary(frame, group_columns, alpha_column, id_column, passthrough)
+    layers = generic_layer_summary(summary, group_columns, alpha_column, passthrough)
+    output = Path(output_dir)
+    output.mkdir(parents=True, exist_ok=True)
+    summary.to_csv(output / "generic_summary_by_alpha.csv", index=False)
+    layers.to_csv(output / "generic_layer_summary.csv", index=False)
+    return {"summary": summary, "layers": layers}
 
 
 def run_aggregate(dataset: str, judged_paths: list[str | Path], output_dir: str | Path,

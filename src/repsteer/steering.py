@@ -44,6 +44,77 @@ def steered_seed(generation: GenerationConfig, row_number: int, **fields) -> int
     return generation.seed + int(hashlib.sha256(material.encode()).hexdigest()[:8], 16) % 1_000_000
 
 
+def resolve_relative_depths(depths: Iterable[float], n_layers: int) -> tuple[int, ...]:
+    """Relative depths {0.08, ..., 0.92} -> layer indices against ``n_layers``.
+
+    Each depth is ``round(depth * n_layers)`` clipped to ``[0, n_layers - 1]``,
+    then consecutive duplicates are removed (rounding can collide).
+    """
+
+    resolved: list[int] = []
+    for depth in depths:
+        if not 0.0 < depth <= 1.0:
+            raise ValueError(f"Relative depth {depth} is outside (0, 1]")
+        layer = min(max(int(round(depth * n_layers)), 0), n_layers - 1)
+        if not resolved or resolved[-1] != layer:
+            resolved.append(layer)
+    return tuple(resolved)
+
+
+def layers_for_run(steering: SteeringConfig, backend: ModelBackend) -> tuple[int, ...]:
+    """Steering layer indices from ``layers`` or resolved ``relative_depths``."""
+
+    if steering.relative_depths is not None:
+        return resolve_relative_depths(steering.relative_depths, backend.n_layers)
+    return tuple(steering.layers)
+
+
+def relative_coefficients(
+    steering: SteeringConfig,
+    vectors: list[SteeringVector],
+    layers: Iterable[int],
+) -> dict[int, tuple[tuple[float, float], ...]]:
+    """Per steering layer: ``(alpha_rel, absolute coefficient)`` pairs.
+
+    ``alpha_mode="relative_norm"``: absolute coefficient = alpha_rel x the
+    layer's median residual norm (from the vectors npz). ``absolute``: the
+    coefficient is used as-is for every layer.
+    """
+
+    if steering.alpha_mode != "relative_norm":
+        return {layer: tuple((float(c), float(c)) for c in steering.coefficients)
+                for layer in layers}
+    index = {(vector.layer, vector.condition): vector for vector in vectors}
+    grid: dict[int, tuple[tuple[float, float], ...]] = {}
+    for layer in layers:
+        conditions = [key[1] for key in index if key[0] == layer]
+        if not conditions:
+            raise KeyError(f"No vector for layer={layer}")
+        norms = {index[(layer, condition)].median_norm for condition in conditions}
+        if len(norms) != 1:
+            raise ValueError(f"Layer {layer} vectors disagree on median_norm: {sorted(norms)}")
+        median_norm = norms.pop()
+        if median_norm is None:
+            raise ValueError(
+                "alpha_mode=relative_norm needs median_norm in the vectors npz; "
+                "rebuild vectors with alpha_mode='relative_norm'"
+            )
+        grid[layer] = tuple((float(alpha_rel), float(alpha_rel) * float(median_norm))
+                            for alpha_rel in steering.coefficients)
+    return grid
+
+
+def _norm_calibration_texts(frame: pd.DataFrame, text_column: str, count: int) -> list[str]:
+    """Deterministic calibration texts drawn from the vector split.
+
+    The vector split pools ``vector_per_cell`` rows per condition cell in
+    ``split_dataset`` order (cell-major); take the first ``count`` texts from it.
+    """
+
+    texts = frame[text_column].astype(str).tolist()
+    return texts[:count]
+
+
 def run_steering(
     backend: ModelBackend,
     frame: pd.DataFrame,
@@ -63,11 +134,20 @@ def run_steering(
     (seed ``seed + baseline_seed_offset + row``), then rows ordered layer ->
     coefficient -> evaluation row. The hook adds ``sign * coefficient`` times the
     (unsigned) vector, where sign is +1 when the target is the positive pole.
+
+    Scaling-study extensions (all default off/production-exact):
+    ``relative_depths`` resolves the layer set against ``backend.n_layers``;
+    ``alpha_mode="relative_norm"`` scales each ``alpha_rel`` by the layer's
+    ``median_norm`` from the vectors npz; ``batched_grid`` covers the baseline
+    plus every layer×alpha row with one ``generate_steered_batch`` call per eval
+    prompt (row layout identical to the production path).
     """
 
     index = vector_index(vectors)
     task = steering.task or spec.name
     setup = steering.setup or ("conditioned" if spec.condition_on else "general")
+    layers = layers_for_run(steering, backend)
+    grid = relative_coefficients(steering, vectors, layers)
     decoding = generation.generate_kwargs()
     prepared = []
     for row_number, (_, row) in enumerate(frame.iterrows()):
@@ -81,9 +161,87 @@ def run_steering(
         )[0]
         prepared.append((row_number, row, source, target, prompt, baseline))
 
+    def result_row(
+        row: pd.Series, source: str, target: str, prompt: str, baseline: str, steered: str,
+        layer: int, alpha_rel: float, coefficient: float,
+    ) -> dict:
+        condition = condition_for_row(row, spec.condition_on)
+        signed = spec.sign_for_target(target) * float(coefficient)
+        result = row.to_dict()
+        result.update(
+            task=task,
+            setup=setup,
+            source_value=source,
+            target_value=target,
+            target_attribute=steering.target_labels.get(target, target),
+            layer=layer,
+            relative_depth=round(layer / backend.n_layers, 2),
+            coefficient=coefficient,
+            alpha_rel=alpha_rel,
+            signed_coefficient=signed,
+            vector_condition="|".join(f"{k}={v}" for k, v in condition) or "general",
+            prompt=prompt,
+            baseline_continuation=baseline,
+            steered_continuation=steered,
+            model_id=model_id,
+            concept=task,
+        )
+        result[id_column] = row[id_column]
+        return result
+
     rows: list[dict] = []
-    for layer in steering.layers:
-        for coefficient in steering.coefficients:
+    if steering.batched_grid:
+        batch_fn = getattr(backend, "generate_steered_batch", None)
+        if batch_fn is None:
+            raise ValueError("batched_grid=True needs a backend with generate_steered_batch")
+        # One batch per eval prompt: baseline row first, then layer-major
+        # (layer -> alpha) rows. Production output rows are row-major within
+        # each (layer, alpha): layer -> coefficient -> row, so the batch's rows
+        # are regrouped below.
+        per_prompt: list[tuple[int, pd.Series, str, str, str, str, list[str]]] = []
+        for row_number, row, source, target, prompt, baseline in prepared:
+            prompt_interventions: list[Intervention | None] = [None]
+            for layer in layers:
+                condition = condition_for_row(row, spec.condition_on)
+                key = (layer, condition)
+                if key not in index:
+                    raise KeyError(f"No vector for layer={layer}, condition={dict(condition)}")
+                for alpha_rel, coefficient in grid[layer]:
+                    prompt_interventions.append(Intervention(
+                        layer=layer,
+                        vector=index[key].values,
+                        coefficient=spec.sign_for_target(target) * float(coefficient),
+                        positions=steering.positions,
+                    ))
+            texts = batch_fn(
+                prompt, prompt_interventions,
+                max_length=generation.max_length, max_new_tokens=generation.max_new_tokens,
+                seed=generation.seed, normalize_whitespace=generation.normalize_whitespace,
+                pad_with_eos=generation.pad_with_eos,
+            )
+            if len(texts) != len(prompt_interventions):
+                raise ValueError(
+                    f"generate_steered_batch returned {len(texts)} rows for "
+                    f"{len(prompt_interventions)} interventions"
+                )
+            per_prompt.append((row_number, row, source, target, prompt, baseline, texts))
+        by_grid: dict[tuple[int, float], list[dict]] = {}
+        for row_number, row, source, target, prompt, baseline, texts in per_prompt:
+            position = 1
+            for layer in layers:
+                for alpha_rel, coefficient in grid[layer]:
+                    by_grid.setdefault((layer, alpha_rel), []).append(result_row(
+                        row, source, target, prompt, baseline, texts[position],
+                        layer, alpha_rel, coefficient,
+                    ))
+                    position += 1
+        for layer in layers:
+            for alpha_rel, _coefficient in grid[layer]:
+                rows.extend(by_grid[(layer, alpha_rel)])
+        return pd.DataFrame(rows)
+
+    for layer in layers:
+        for alpha_rel, coefficient in grid[layer]:
             for row_number, row, source, target, prompt, baseline in prepared:
                 condition = condition_for_row(row, spec.condition_on)
                 key = (layer, condition)
@@ -103,23 +261,10 @@ def run_steering(
                 steered = backend.generate(
                     [prompt], intervention=intervention, **{**decoding, "seed": seed}
                 )[0]
-                result = row.to_dict()
-                result.update(
-                    task=task,
-                    setup=setup,
-                    source_value=source,
-                    target_value=target,
-                    target_attribute=steering.target_labels.get(target, target),
-                    layer=layer,
-                    coefficient=coefficient,
-                    signed_coefficient=signed,
-                    vector_condition="|".join(f"{k}={v}" for k, v in condition) or "general",
-                    prompt=prompt,
-                    baseline_continuation=baseline,
-                    steered_continuation=steered,
-                )
-                result[id_column] = row[id_column]
-                rows.append(result)
+                rows.append(result_row(
+                    row, source, target, prompt, baseline, steered,
+                    layer, alpha_rel, coefficient,
+                ))
     return pd.DataFrame(rows)
 
 

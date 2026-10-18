@@ -2,14 +2,44 @@ from __future__ import annotations
 
 import random
 from contextlib import contextmanager
-from typing import Iterator, Sequence
+from datetime import datetime
+from typing import Any, Iterator, Sequence
 
 import numpy as np
 
 from ..config import ModelConfig
 from ..text import safe_text
 from ..types import Intervention, Pooling
-from .registry import ModelProfile, ModelRegistry, apply_profile, registry_for, select_modules_by_regex
+from .registry import (
+    ModelProfile,
+    ModelRegistry,
+    apply_profile,
+    registry_for,
+    select_modules_by_regex,
+)
+
+
+def _supports_dtype_kwarg(auto_cls: Any) -> bool:
+    """Detect whether ``auto_cls.from_pretrained`` accepts ``dtype`` natively.
+
+    Transformers >= 5 renamed ``torch_dtype`` to ``dtype`` (the old spelling
+    still works but warns); older releases only know ``torch_dtype``.
+    """
+    try:
+        import inspect
+        import re
+
+        import transformers.modeling_utils as modeling_utils
+
+        source = inspect.getsource(modeling_utils.PreTrainedModel.from_pretrained)
+        # Modern transformers (>= v5) deprecates torch_dtype with this exact
+        # message; the `dtype` kwarg is then accepted natively.
+        if "Use `dtype` instead" in source:
+            return True
+        # Some intermediate releases accept `dtype` without the message.
+        return re.search(r'kwargs\.pop\("dtype"', source) is not None
+    except (TypeError, ValueError, OSError):
+        return False
 
 
 class HuggingFaceBackend:
@@ -35,18 +65,42 @@ class HuggingFaceBackend:
         self.torch = torch
         profile = self._match_profile(config, registry)
         config = apply_profile(config, profile)
+        self.config = config
         self.profile = profile
+        if config.loader == "image_text_to_text":
+            try:
+                from transformers import AutoModelForImageTextToText
+            except ImportError as exc:
+                raise RuntimeError(
+                    "model.loader=image_text_to_text requires a transformers version "
+                    "with AutoModelForImageTextToText"
+                ) from exc
+            auto_cls = AutoModelForImageTextToText
+        else:
+            auto_cls = AutoModelForCausalLM
         dtype = getattr(torch, config.dtype) if config.dtype != "auto" else "auto"
         tokenizer_id = config.tokenizer_id or config.model_id
+        load_kwargs: dict[str, Any] = {
+            "trust_remote_code": config.trust_remote_code,
+            "attn_implementation": config.attn_implementation,
+        }
+        if config.max_memory is not None:
+            load_kwargs["max_memory"] = dict(config.max_memory)
+        device_map = config.device_map
+        if config.single_device:
+            device_map = {"": 0}
+        if device_map is not None:
+            load_kwargs["device_map"] = device_map
+        # transformers >= 5 accepts `dtype`; older releases need `torch_dtype`
+        # (which newer releases accept with a deprecation warning).
+        if _supports_dtype_kwarg(auto_cls):
+            load_kwargs["dtype"] = dtype
+        else:
+            load_kwargs["torch_dtype"] = dtype
         self.tokenizer = AutoTokenizer.from_pretrained(
             tokenizer_id, trust_remote_code=config.trust_remote_code
         )
-        self.model = AutoModelForCausalLM.from_pretrained(
-            config.model_id,
-            torch_dtype=dtype,
-            device_map=config.device_map,
-            trust_remote_code=config.trust_remote_code,
-        )
+        self.model = auto_cls.from_pretrained(config.model_id, **load_kwargs)
         self.model.eval()
         if self.tokenizer.pad_token_id is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
@@ -55,6 +109,8 @@ class HuggingFaceBackend:
         self.extraction_padding_side = self.tokenizer.padding_side
         self.tokenizer.padding_side = "left"
         self.use_chat_template = config.use_chat_template
+        self.add_special_tokens = config.add_special_tokens
+        self.layer_path = config.layer_path or ("regex:" + config.layer_regex if config.layer_regex else None)
         self.layers = self._resolve_layers(config.layer_path, config.layer_regex)
 
     @staticmethod
@@ -172,6 +228,112 @@ class HuggingFaceBackend:
             self.tokenizer.padding_side = generation_side
         return np.concatenate(arrays, axis=0).astype(np.float32)
 
+    def _layer_extract(
+        self,
+        texts: Sequence[str],
+        layers: Sequence[int],
+        batch_size: int,
+        max_length: int,
+    ):
+        """One forward per batch with hooks on every requested layer.
+
+        Yields ``(store: dict[int, torch.Tensor], attention_mask)`` per batch,
+        with arithmetic identical to the single-layer
+        :meth:`sentence_representations` path.
+
+        ``add_special_tokens`` is applied only when the config sets it; the
+        default (``None``) keeps the tokenizer's own behavior, exactly as
+        production did.
+        """
+        for layer in layers:
+            self._check_layer(layer)
+        torch = self.torch
+        modules = {layer: self.layers[layer] for layer in layers}
+        generation_side = self.tokenizer.padding_side
+        self.tokenizer.padding_side = self.extraction_padding_side
+        encode_kwargs = {"add_special_tokens": self.add_special_tokens} \
+            if self.add_special_tokens is not None else {}
+        try:
+            for start in range(0, len(texts), batch_size):
+                batch = [safe_text(text) for text in texts[start : start + batch_size]]
+                encoded = self.tokenizer(
+                    batch, return_tensors="pt", padding=True, truncation=True,
+                    max_length=max_length, **encode_kwargs)
+                encoded = {key: value.to(self.input_device) for key, value in encoded.items()}
+                store: dict[int, Any] = {}
+                handles = []
+
+                def make_hook(layer):
+                    def hook(_module, _inputs, output):
+                        store[layer] = (
+                            output[0] if isinstance(output, tuple) else output
+                        ).detach()
+
+                    return hook
+
+                try:
+                    for layer, module in modules.items():
+                        handles.append(module.register_forward_hook(make_hook(layer)))
+                    with torch.no_grad():
+                        self.model(**encoded)
+                finally:
+                    for handle in handles:
+                        handle.remove()
+                yield store, encoded["attention_mask"]
+        finally:
+            self.tokenizer.padding_side = generation_side
+
+    def sentence_representations_layers(
+        self,
+        texts: Sequence[str],
+        layers: Sequence[int],
+        pooling: Pooling,
+        batch_size: int = 8,
+        max_length: int = 512,
+    ) -> dict[int, np.ndarray]:
+        """Pooled representations of several layers in one forward per batch.
+
+        For each requested layer the output must be bit-identical
+        (``np.array_equal``) to :meth:`sentence_representations` with the same
+        ``pooling``: same batch tokenization, same hook arithmetic, same pooling
+        calls.
+        """
+        per_layer: dict[int, list[np.ndarray]] = {layer: [] for layer in layers}
+        for store, attention_mask in self._layer_extract(texts, layers, batch_size, max_length):
+            for layer in layers:
+                pooled = self._pool(store[layer], attention_mask, pooling)
+                per_layer[layer].append(pooled.cpu().numpy().astype(np.float32))
+        return {
+            layer: np.concatenate(arrays, axis=0).astype(np.float32)
+            for layer, arrays in per_layer.items()
+        }
+
+    def residual_norms(
+        self,
+        texts: Sequence[str],
+        layers: Sequence[int],
+        batch_size: int = 8,
+        max_length: int = 512,
+    ) -> dict[int, float]:
+        """Median residual-stream norm per layer.
+
+        Median over all non-pad, non-first token positions across ``texts`` of
+        ``‖h_layer‖₂`` computed in float32; raw text, no chat template.
+        """
+        norms: dict[int, list[float]] = {layer: [] for layer in layers}
+        torch = self.torch
+        for store, attention_mask in self._layer_extract(texts, layers, batch_size, max_length):
+            mask = attention_mask.bool()
+            # Drop the first (absolute) position of every row.
+            mask[:, 0] = False
+            for layer in layers:
+                layer_norms = torch.norm(store[layer].float(), dim=-1)[mask.to(store[layer].device)]
+                norms[layer].extend(layer_norms.cpu().tolist())
+        return {
+            layer: float(np.median(np.asarray(values, dtype=np.float32)))
+            for layer, values in norms.items()
+        }
+
     def _format_prompts(self, prompts: Sequence[str]) -> list[str]:
         if not self.use_chat_template or not hasattr(self.tokenizer, "apply_chat_template"):
             return list(prompts)
@@ -180,25 +342,63 @@ class HuggingFaceBackend:
             for prompt in prompts
         ]
 
+    def _template_messages(self, prompt: str) -> list[dict[str, str]]:
+        messages = []
+        system_prompt = getattr(getattr(self, "config", None), "system_prompt", None)
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": prompt})
+        return messages
+
     def _apply_chat_template(self, prompt: str) -> str:
         """``SearchCaaModel.format_generation_prompt`` / ``StringJudge.format_judge_prompt``:
         try ``enable_thinking=False``, retry without it on TypeError, and fall back to
-        the raw prompt if the template fails otherwise."""
+        the raw prompt if the template fails otherwise.
 
-        messages = [{"role": "user", "content": prompt}]
-        try:
+        Config extras are merged when set: ``chat_template_kwargs`` update the
+        call (e.g. ``date_string``, ``reasoning_effort``) and ``system_prompt``
+        prepends a system message. ``generation_prefix`` is appended after the
+        rendered template (gpt-oss harmony: the final channel marker).
+        ``chat_template_kwargs.fixed_date`` (YYYY-MM-DD) pins templates that call
+        ``strftime_now`` (gpt-oss "Current date:") so prompts do not change with the
+        day a job runs: a render-context ``strftime_now`` shadows the global one.
+        """
+
+        messages = self._template_messages(prompt)
+        extras = dict(getattr(getattr(self, "config", None), "chat_template_kwargs", None) or {})
+        prefix = getattr(getattr(self, "config", None), "generation_prefix", None) or ""
+        enable_thinking = extras.pop("enable_thinking", None)
+        fixed_date = extras.pop("fixed_date", None)
+        if fixed_date is not None:
+            pinned = datetime.strptime(str(fixed_date), "%Y-%m-%d")
+            extras["strftime_now"] = pinned.strftime
+
+        def _render(**kwargs):
             return self.tokenizer.apply_chat_template(
-                messages, tokenize=False, add_generation_prompt=True, enable_thinking=False
+                messages, tokenize=False, add_generation_prompt=True, **kwargs
             )
-        except TypeError:
+
+        try:
             try:
-                return self.tokenizer.apply_chat_template(
-                    messages, tokenize=False, add_generation_prompt=True
+                rendered = _render(
+                    enable_thinking=False if enable_thinking is None else enable_thinking,
+                    **extras,
                 )
-            except Exception:
-                return prompt
+            except TypeError:
+                # Legacy template: retry without enable_thinking entirely.
+                kwargs = dict(extras)
+                if enable_thinking is None:
+                    rendered = _render(**kwargs)
+                else:
+                    rendered = _render(enable_thinking=enable_thinking, **kwargs)
         except Exception:
+            if prefix:
+                raise ValueError(
+                    "generation_prefix requires a working chat template; "
+                    "rendering the template failed"
+                )
             return prompt
+        return rendered + prefix
 
     @contextmanager
     def _steering_hook(self, intervention: Intervention | None) -> Iterator[None]:
@@ -315,6 +515,139 @@ class HuggingFaceBackend:
             outputs.extend(texts)
         return outputs
 
+    @contextmanager
+    def _row_steering_hooks(
+        self, interventions: Sequence[Intervention | None]
+    ) -> Iterator[None]:
+        """One hook per distinct steered layer; each adds row-specific deltas.
+
+        Rows whose entry is ``None`` or targets another layer receive zero.
+        Arithmetic (vector cast, coefficient scaling, position semantics) is
+        identical to :meth:`_steering_hook`; ``generated`` skips the first
+        multi-token (prefill) pass per layer, as production did.
+        """
+        torch = self.torch
+        by_layer: dict[int, list[tuple[int, Intervention]]] = {}
+        for row, intervention in enumerate(interventions):
+            if intervention is None:
+                continue
+            self._check_layer(intervention.layer)
+            for positions in (intervention.positions,):
+                if positions not in ("all", "last", "generated"):
+                    raise ValueError(f"Unsupported position mode: {positions}")
+            by_layer.setdefault(intervention.layer, []).append((row, intervention))
+        handles: list[Any] = []
+
+        def make_hook(layer: int):
+            state = {"prefill_seen": False}
+
+            def hook(_module, _inputs, output):
+                hidden = output[0] if isinstance(output, tuple) else output
+                is_prefill = hidden.shape[1] > 1 and not state["prefill_seen"]
+                if is_prefill:
+                    state["prefill_seen"] = True
+                new_hidden = hidden.clone()
+                touched = False
+                for row, intervention in by_layer.get(layer, []):
+                    positions = intervention.positions
+                    if positions == "generated" and is_prefill:
+                        # First multi-token pass: skip, as production did.
+                        # (Batch decode afterward is single-token per step.)
+                        continue
+                    vector = torch.from_numpy(
+                        np.asarray(intervention.vector, dtype=np.float32).copy()
+                    )
+                    delta = float(intervention.coefficient) * vector.to(
+                        device=new_hidden.device, dtype=new_hidden.dtype
+                    ).view(1, 1, -1)
+                    if positions == "last":
+                        new_hidden[row:row + 1, -1:, :] += delta
+                    else:  # "all" or "generated" post-prefill
+                        new_hidden[row:row + 1, :, :] += delta
+                    touched = True
+                if not touched:
+                    return None
+                if isinstance(output, tuple):
+                    return (new_hidden,) + tuple(output[1:])
+                return new_hidden
+
+            return hook
+
+        try:
+            for layer in by_layer:
+                handles.append(self.layers[layer].register_forward_hook(make_hook(layer)))
+            yield
+        finally:
+            for handle in handles:
+                handle.remove()
+
+
+    def generate_steered_batch(
+        self,
+        prompt: str,
+        interventions: Sequence[Intervention | None],
+        *,
+        max_length: int,
+        max_new_tokens: int,
+        seed: int,
+        normalize_whitespace: bool = True,
+        pad_with_eos: bool = True,
+    ) -> list[str]:
+        """Generate one prompt N times, each row under its own intervention.
+
+        Greedy only. The prompt (repeated N times, identical rows, no padding)
+        is decoded in one batch; one hook per distinct steered layer adds
+        row-specific deltas (rows with ``None`` or a different layer get zero;
+        position semantics identical to :meth:`_steering_hook`). Rows that come
+        back empty are retried individually through the single-prompt
+        :meth:`generate` path with ``retry_empty``. Output order matches the
+        input ``interventions`` order.
+        """
+        torch = self.torch
+        n = len(interventions)
+        if normalize_whitespace:
+            prompt = safe_text(prompt)
+        prompts = [prompt] * n
+        formatted = self._format_prompts(prompts)
+        pad_token_id = self.tokenizer.eos_token_id if pad_with_eos else self.tokenizer.pad_token_id
+        encoded = self.tokenizer(formatted, padding=True, truncation=True,
+                                 max_length=max_length, return_tensors="pt")
+        encoded = {key: value.to(self.input_device) for key, value in encoded.items()}
+        prompt_width = encoded["input_ids"].shape[1]
+        texts: list[str] = []
+        with self._row_steering_hooks(interventions), torch.inference_mode():
+            self._seed_everything(seed)
+            generated = self.model.generate(
+                **encoded,
+                max_new_tokens=max_new_tokens,
+                do_sample=False,
+                pad_token_id=pad_token_id,
+            )
+            texts = self.tokenizer.batch_decode(
+                generated[:, prompt_width:], skip_special_tokens=True
+            )
+        if normalize_whitespace:
+            texts = [safe_text(text) for text in texts]
+        outputs: list[str] = []
+        for row, intervention in enumerate(interventions):
+            if texts[row]:
+                outputs.append(texts[row])
+                continue
+            # Retry only this row via the production single-prompt path.
+            outputs.append(self.generate(
+                [formatted[row]],
+                max_length=max_length,
+                max_new_tokens=max_new_tokens,
+                temperature=0.0,
+                top_p=1.0,
+                do_sample=False,
+                seed=seed,
+                intervention=intervention,
+                normalize_whitespace=normalize_whitespace,
+                retry_empty=True,
+                pad_with_eos=pad_with_eos,
+            )[0])
+        return outputs
 
     def sequence_nll(
         self,

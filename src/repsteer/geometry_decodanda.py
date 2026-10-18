@@ -379,3 +379,19 @@ def matched_audit_layer(
             "model_id": model_id, "dataset_csv": dataset_csv,
         })
     return rows
+
+
+def geometry_layer_task(task: dict) -> tuple[list[dict], list[dict]]:
+    """One (layer, pooling) of the CLI geometry loop; top-level so worker processes can run it.
+
+    Returns ``(rows, dichotomy_rows)``; the matched audit has no dichotomy rows.
+    """
+    if task["audit"]:
+        return matched_audit_layer(
+            task["x"], task["metadata"], task["config"], condition_fields=task["condition_fields"],
+            layer=task["layer"], n_per_cell=task["effective_n"], pooling=task["pooling"],
+            model_id=task["model_id"], dataset_csv=task["dataset_csv"]), []
+    return production_layer_geometry(
+        task["x"], task["metadata"], task["config"], condition_fields=task["condition_fields"],
+        target_fields=task["target_fields"], layer=task["layer"], pooling=task["pooling"],
+        pooling_index=task["pooling_index"], effective_n=task["effective_n"], model_id=task["model_id"])

@@ -46,6 +46,14 @@ class ModelProfile:
     dtype: str | None = None
     use_chat_template: bool | None = None
     trust_remote_code: bool | None = None
+    loader: str | None = None
+    max_memory: dict[str, Any] | None = None
+    attn_implementation: str | None = None
+    add_special_tokens: bool | None = None
+    chat_template_kwargs: dict[str, Any] | None = None
+    system_prompt: str | None = None
+    generation_prefix: str | None = None
+    single_device: bool | None = None
 
 
 _PROFILE_FIELDS = {field.name for field in fields(ModelProfile)}
@@ -74,6 +82,15 @@ def _profile(raw: Any, context: str) -> ModelProfile:
     unknown = set(raw) - _PROFILE_FIELDS
     if unknown:
         raise ValueError(f"{context}: unknown profile field(s) {sorted(unknown)}")
+    loader = raw.get("loader")
+    if loader is not None and loader not in ("causal_lm", "image_text_to_text"):
+        raise ValueError(f"{context}: loader must be causal_lm or image_text_to_text, got {loader!r}")
+    max_memory = raw.get("max_memory")
+    if max_memory is not None and not isinstance(max_memory, dict):
+        raise ValueError(f"{context}: max_memory must be a mapping")
+    chat_template_kwargs = raw.get("chat_template_kwargs")
+    if chat_template_kwargs is not None and not isinstance(chat_template_kwargs, dict):
+        raise ValueError(f"{context}: chat_template_kwargs must be a mapping")
     return ModelProfile(
         layer_path=None if raw.get("layer_path") is None else str(raw["layer_path"]),
         layer_regex=None if raw.get("layer_regex") is None else str(raw["layer_regex"]),
@@ -81,6 +98,14 @@ def _profile(raw: Any, context: str) -> ModelProfile:
         dtype=None if raw.get("dtype") is None else str(raw["dtype"]),
         use_chat_template=_coerce_bool(raw.get("use_chat_template"), context),
         trust_remote_code=_coerce_bool(raw.get("trust_remote_code"), context),
+        loader=loader,
+        max_memory=max_memory,
+        attn_implementation=None if raw.get("attn_implementation") is None else str(raw["attn_implementation"]),
+        add_special_tokens=_coerce_bool(raw.get("add_special_tokens"), context),
+        chat_template_kwargs=chat_template_kwargs,
+        system_prompt=None if raw.get("system_prompt") is None else str(raw["system_prompt"]),
+        generation_prefix=None if raw.get("generation_prefix") is None else str(raw["generation_prefix"]),
+        single_device=_coerce_bool(raw.get("single_device"), context),
     )
 
 
@@ -138,10 +163,29 @@ def load_registry(path: str | Path) -> ModelRegistry:
     return ModelRegistry.from_file(path)
 
 
+def _repo_root() -> Path:
+    """Package source root: src/repsteer/models -> repo/package root.
+
+    When installed as a package, falls back to the parent of the package dir.
+    """
+    return Path(__file__).resolve().parents[3]
+
+
 def default_registry_path() -> Path | None:
-    """Return the conventional registry path when it exists in the working directory."""
-    candidate = Path(DEFAULT_REGISTRY_PATH)
-    return candidate if candidate.is_file() else None
+    """Return the conventional registry path, resolved relative to the repo
+    root rather than the current working directory.
+
+    Checks ``<repo_root>/configs/model_registry.yaml`` first, then the legacy
+    CWD-relative location for callers running from elsewhere.
+    """
+    candidates = (
+        _repo_root() / DEFAULT_REGISTRY_PATH,
+        Path(DEFAULT_REGISTRY_PATH),
+    )
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    return None
 
 
 def _natural_key(name: str) -> tuple[tuple[bool, int, str], ...]:
@@ -178,6 +222,11 @@ def apply_profile(config: ModelConfig, profile: ModelProfile | None) -> ModelCon
       config is left at its dataclass default;
     - ``layer_path``/``layer_regex`` apply only when ``config.layer_path`` is
       unset; ``layer_path`` takes precedence over ``layer_regex``.
+    - Scaling-study fields (``loader``, ``max_memory``,
+      ``attn_implementation``, ``add_special_tokens``,
+      ``chat_template_kwargs``, ``system_prompt``, ``generation_prefix``)
+      and ``single_device`` apply only when the corresponding config value is
+      unset (the field default).
     """
     if profile is None:
         return config
@@ -190,6 +239,22 @@ def apply_profile(config: ModelConfig, profile: ModelProfile | None) -> ModelCon
         updates["use_chat_template"] = profile.use_chat_template
     if profile.trust_remote_code is not None and config.trust_remote_code is False:
         updates["trust_remote_code"] = profile.trust_remote_code
+    optional = (
+        ("loader", config.loader, None),
+        ("max_memory", config.max_memory, None),
+        ("attn_implementation", config.attn_implementation, None),
+        ("add_special_tokens", config.add_special_tokens, None),
+        ("chat_template_kwargs", config.chat_template_kwargs, None),
+        ("system_prompt", config.system_prompt, None),
+        ("generation_prefix", config.generation_prefix, None),
+    )
+    for name, current, default in optional:
+        if current is default:  # identity: unset config field
+            value = getattr(profile, name)
+            if value is not None:
+                updates[name] = value
+    if profile.single_device is not None and config.single_device is False:
+        updates["single_device"] = profile.single_device
     if config.layer_path is None:
         if profile.layer_path is not None:
             updates["layer_path"] = profile.layer_path

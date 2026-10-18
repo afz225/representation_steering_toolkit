@@ -72,3 +72,32 @@ class ModelBackend(Protocol):
         seed: int,
         intervention: Intervention | None = None,
     ) -> tuple[str, dict[int, np.ndarray]]: ...
+
+    def sentence_representations_layers(
+        self,
+        texts: Sequence[str],
+        layers: Sequence[int],
+        pooling: Pooling,
+        batch_size: int = 8,
+        max_length: int = 512,
+    ) -> dict[int, np.ndarray]: ...
+
+    def residual_norms(
+        self,
+        texts: Sequence[str],
+        layers: Sequence[int],
+        batch_size: int = 8,
+        max_length: int = 512,
+    ) -> dict[int, float]: ...
+
+    def generate_steered_batch(
+        self,
+        prompt: str,
+        interventions: Sequence[Intervention | None],
+        *,
+        max_length: int,
+        max_new_tokens: int,
+        seed: int,
+        normalize_whitespace: bool = True,
+        pad_with_eos: bool = True,
+    ) -> list[str]: ...

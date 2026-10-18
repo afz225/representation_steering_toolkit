@@ -27,6 +27,15 @@ class ModelConfig:
     layer_path: str | None = None
     layer_regex: str | None = None
     model_registry: str | None = None
+    # --- scaling-study extensions (all default = current behavior) ---
+    loader: str | None = None
+    max_memory: dict[str, Any] | None = None
+    attn_implementation: str | None = None
+    add_special_tokens: bool | None = None
+    chat_template_kwargs: dict[str, Any] | None = None
+    system_prompt: str | None = None
+    generation_prefix: str | None = None
+    single_device: bool = False
 
 
 @dataclass(frozen=True)
@@ -91,6 +100,12 @@ class VectorSamplingConfig:
     negative_seed_offset: int = 0
     # caa_conditioned_steering.sample_texts falls back to replace=True when a class is short.
     replace_if_short: bool = False
+    # Production draws each class per layer (random_state=seed+layer+offset), so the
+    # texts differ across layers and union extraction is not bit-identical. Set
+    # ``per_layer_resample=False`` (opt-in) to draw the texts once with
+    # ``random_state=seed+offset`` — identical across layers — and extract them in a
+    # single pass via ``sentence_representations_layers`` when the backend provides it.
+    per_layer_resample: bool = True
 
 
 @dataclass(frozen=True)
@@ -111,6 +126,20 @@ class SteeringConfig:
     task: str | None = None
     setup: str | None = None
     target_labels: dict[str, str] = field(default_factory=dict)
+    # Layers expressed as relative depths in (0, 1] of backend.n_layers; resolved
+    # to layer indices (mutually exclusive with ``layers``).
+    relative_depths: tuple[float, ...] | None = None
+    # "absolute": coefficients are used as-is (production). "relative_norm":
+    # coefficients are alpha_rel multipliers of the layer's median residual norm
+    # (stored in the vectors npz as ``median_norm``).
+    alpha_mode: str = "absolute"
+    # Number of calibration texts for the median norm, drawn deterministically
+    # from the vector split (front of each cell's vector block, cell-major).
+    norm_calibration_texts: int = 128
+    # False (production): one generate call per (layer, alpha, row).
+    # True: generate_steered_batch with one batch per eval prompt covering the
+    # baseline plus all layer×alpha rows (row layout identical to production).
+    batched_grid: bool = False
     sampling: VectorSamplingConfig | None = None
 
 
@@ -140,6 +169,9 @@ class GeometryConfig:
     audit_n_per_cell: int | None = None
     audit_training_fraction: float = 0.75
     audit_cross_validations: int = 25
+    # Layers as relative depths of backend.n_layers, resolved exactly like
+    # steering.relative_depths (mutually exclusive with ``layers``).
+    relative_depths: tuple[float, ...] | None = None
 
 
 @dataclass(frozen=True)
@@ -149,6 +181,9 @@ class JudgeConfig:
     # judge prompt's target line (production pairwise_string_prompt).
     attribute_descriptions: dict[str, str | dict[str, str]]
     prompt_template: str | None = None
+    # "production" keeps DEFAULT_JUDGE_PROMPT (prompt_template wins if set);
+    # "generic" selects the shipped domain-neutral GENERIC_JUDGE_PROMPT.
+    prompt_preset: str = "production"
     max_new_tokens: int = 1024
     max_length: int = 2048
     seed: int = 42
@@ -162,6 +197,12 @@ class JudgeConfig:
     repair_invalid: bool = False
     repair_max_new_tokens: int = 2048
     repair_seed: int = 910000
+    # Scaling-study extensions (all default = current behavior):
+    # backend "hf" = production HuggingFaceBackend; "vllm" = judge_vllm.VLLMJudgeBackend
+    # (lazy import; vllm lives in a separate env). refusal_substrings enables the
+    # deterministic Arditi-style `refusal_heuristic` column (None = off).
+    backend: str = "hf"
+    refusal_substrings: tuple[str, ...] | None = None
 
 
 @dataclass(frozen=True)
@@ -187,7 +228,11 @@ def _tuple_values(values: dict[str, list[str]]) -> dict[str, tuple[str, str]]:
 
 def _model(raw: dict[str, Any]) -> ModelConfig:
     raw = dict(raw)
-    for optional in ("layer_path", "layer_regex", "model_registry", "tokenizer_id"):
+    for optional in (
+        "layer_path", "layer_regex", "model_registry", "tokenizer_id",
+        "loader", "max_memory", "attn_implementation", "add_special_tokens",
+        "chat_template_kwargs", "system_prompt", "generation_prefix",
+    ):
         if raw.get(optional) is None:
             raw.pop(optional, None)
     return ModelConfig(**raw)
@@ -205,10 +250,13 @@ def load_config(path: str | Path) -> ExperimentConfig:
     steering_raw = dict(raw["steering"])
     steering_raw["layers"] = tuple(steering_raw["layers"])
     steering_raw["coefficients"] = tuple(steering_raw["coefficients"])
+    for optional in ("relative_depths",):
+        if steering_raw.get(optional) is not None:
+            steering_raw[optional] = tuple(steering_raw[optional])
     geometry_raw = dict(raw["geometry"])
     geometry_raw["layers"] = tuple(geometry_raw["layers"])
     geometry_raw["poolings"] = tuple(geometry_raw.get("poolings", ("mean",)))
-    for optional in ("variables", "target_fields"):
+    for optional in ("variables", "target_fields", "relative_depths"):
         if geometry_raw.get(optional) is not None:
             geometry_raw[optional] = tuple(geometry_raw[optional])
     judge = None
@@ -216,6 +264,8 @@ def load_config(path: str | Path) -> ExperimentConfig:
         judge_raw = dict(raw["judge"])
         judge_raw["model"] = _model(judge_raw["model"])
         judge_raw["shard_group_by"] = tuple(judge_raw.get("shard_group_by", ()))
+        if judge_raw.get("refusal_substrings") is not None:
+            judge_raw["refusal_substrings"] = tuple(judge_raw["refusal_substrings"])
         judge = JudgeConfig(**judge_raw)
     if steering_raw.get("sampling") is not None:
         steering_raw["sampling"] = VectorSamplingConfig(**steering_raw["sampling"])
@@ -246,10 +296,25 @@ def validate_config(config: ExperimentConfig) -> None:
     if config.target.name in config.target.condition_on:
         raise ValueError("A target cannot condition on itself")
     steering = config.steering
+    if steering.relative_depths is not None and steering.layers:
+        raise ValueError("steering.layers and steering.relative_depths are mutually exclusive")
+    if steering.alpha_mode not in ("absolute", "relative_norm"):
+        raise ValueError("steering.alpha_mode must be absolute or relative_norm")
+    if steering.norm_calibration_texts < 1:
+        raise ValueError("steering.norm_calibration_texts must be positive")
     if (steering.prompt_templates is None) != (steering.prompt_template_column is None):
         raise ValueError("steering.prompt_templates and prompt_template_column must be set together")
     if config.judge is not None and config.judge.num_shards < 1:
         raise ValueError("judge.num_shards must be positive")
+    if config.judge is not None:
+        if config.judge.prompt_preset not in {"production", "generic"}:
+            raise ValueError("judge.prompt_preset must be production or generic")
+        if config.judge.backend not in {"hf", "vllm"}:
+            raise ValueError("judge.backend must be hf or vllm")
+    judge_models = [config.judge.model] if config.judge is not None else []
+    for model_config in [config.model, *judge_models]:
+        if model_config.loader not in (None, "causal_lm", "image_text_to_text"):
+            raise ValueError(f"model.loader must be causal_lm or image_text_to_text, got {model_config.loader!r}")
     if config.geometry.engine not in {"decodanda", "native"}:
         raise ValueError("geometry.engine must be decodanda or native")
     if config.geometry.protocol not in {"production", "matched_audit"}:
@@ -258,7 +323,11 @@ def validate_config(config: ExperimentConfig) -> None:
     unknown_targets = set(config.geometry.target_fields or ()) - set(geometry_variables)
     if unknown_targets:
         raise ValueError(f"geometry.target_fields not in geometry variables: {sorted(unknown_targets)}")
-    if not config.steering.layers or not config.geometry.layers:
+    if config.geometry.relative_depths is not None and config.geometry.layers:
+        raise ValueError("geometry.layers and geometry.relative_depths are mutually exclusive")
+    if (not (config.steering.layers or config.steering.relative_depths)
+            or not (config.geometry.layers or config.geometry.relative_depths)):
         raise ValueError("Steering and geometry layer lists cannot be empty")
-    if any(layer < 0 for layer in (*config.steering.layers, *config.geometry.layers)):
+    geometry_and_steering_layers = (*config.steering.layers, *config.geometry.layers)
+    if any(layer < 0 for layer in geometry_and_steering_layers):
         raise ValueError("Layer indices must be non-negative")

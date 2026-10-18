@@ -45,3 +45,104 @@ profiles:
   "chatlm/mlp-demo":
     layer_regex: 'model\.layers\.\d+\.mlp$'
     use_chat_template: true
+
+  # --- scaling study (13 study models + judge models) ----------------------
+  #
+  # Layer paths verified against each released architecture:
+  #   Gemma-4 (E2B/E4B/31B)  -> model.language_model.layers (Gemma4ForCausalLM
+  #                             wraps language_model; the natively-multimodal
+  #                             E-series checkpoints are loaded as text
+  #                             CausalLMs and must sit on a single GPU)
+  #   Qwen3.5                -> model.layers (loaded as text-only
+  #                             AutoModelForCausalLM)
+  #   Granite 4.2            -> model.layers
+  #   OLMo 3                 -> model.layers
+  #   gpt-oss                -> model.layers; harmony chat template renders the
+  #                             analysis channel, so generation starts with the
+  #                             final-channel prefix and reasoning_effort=low
+  "google/gemma-4-E2B-it":
+    layer_path: model.language_model.layers
+    use_chat_template: true
+    dtype: bfloat16
+    single_device: true
+
+  "google/gemma-4-E4B-it":
+    layer_path: model.language_model.layers
+    use_chat_template: true
+    dtype: bfloat16
+    single_device: true
+
+  "google/gemma-4-31B-it":
+    layer_path: model.language_model.layers
+    use_chat_template: true
+    dtype: bfloat16
+
+  "Qwen/Qwen3.5-2B":
+    loader: causal_lm
+    layer_path: model.layers
+    use_chat_template: true
+    dtype: bfloat16
+
+  "Qwen/Qwen3.5-9B":
+    loader: causal_lm
+    layer_path: model.layers
+    use_chat_template: true
+    dtype: bfloat16
+
+  "Qwen/Qwen3.5-27B":
+    loader: causal_lm
+    layer_path: model.layers
+    use_chat_template: true
+    dtype: bfloat16
+
+  "Qwen/Qwen3.5-122B-A10B":
+    loader: causal_lm
+    layer_path: model.layers
+    use_chat_template: true
+    dtype: bfloat16
+
+  "ibm-granite/granite-4.2-3b":
+    layer_path: model.layers
+    use_chat_template: true
+    dtype: bfloat16
+
+  "ibm-granite/granite-4.2-8b":
+    layer_path: model.layers
+    use_chat_template: true
+    dtype: bfloat16
+
+  "ibm-granite/granite-4.2-30b":
+    layer_path: model.layers
+    use_chat_template: true
+    dtype: bfloat16
+
+  "allenai/Olmo-3-7B-Instruct":
+    layer_path: model.layers
+    use_chat_template: true
+    dtype: bfloat16
+
+  "allenai/Olmo-3.1-32B-Instruct":
+    layer_path: model.layers
+    use_chat_template: true
+    dtype: bfloat16
+
+  "openai/gpt-oss-120b":
+    layer_path: model.layers
+    use_chat_template: true
+    dtype: bfloat16
+    generation_prefix: "<|channel|>final<|message|>"
+    chat_template_kwargs:
+      reasoning_effort: low
+      fixed_date: "2026-10-17"  # template prints "Current date:"; pinned for reproducibility
+
+  # Judge models
+  "Qwen/Qwen3.6-27B":
+    loader: causal_lm
+    layer_path: model.layers
+    use_chat_template: true
+    dtype: bfloat16
+
+  "zai-org/GLM-4.5-Air":
+    layer_path: model.layers
+    use_chat_template: true
+    dtype: bfloat16

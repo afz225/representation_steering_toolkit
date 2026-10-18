@@ -124,6 +124,7 @@ Decodanda engine fields:
 | `auto_reduce_n_per_cell` | Production protocol only: shrink `n_per_cell` to the smallest cell instead of failing. |
 | `audit_n_per_cell` | Matched-audit cell size (default `n_per_cell`); cells must be exactly this size. |
 | `audit_training_fraction`, `audit_cross_validations` | Matched-audit named decoding settings. |
+| `relative_depths` | Optional, instead of `layers`: depths in (0, 1] resolved against the model's layer count exactly like `steering.relative_depths`; geometry rows then carry the same `relative_depth` (`round(layer / n_layers, 2)`) as the steering rows. `repsteer geometry --layers` overrides it. |
 
 `zscore` should normally remain true. `n_resamplings` (CCGP resamplings) and
 `ndata` control named metric sampling. SD has separate `sd_ndata`,

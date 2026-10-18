@@ -18,6 +18,15 @@ Implement `repsteer.models.base.ModelBackend`:
 5. score next-token choice probabilities;
 6. generate while capturing selected layer representations.
 
+Scaling-study backends may additionally implement (provided by
+`HuggingFaceBackend`): `sentence_representations_layers` — same pooled output
+as (2) for several layers in one forward per batch, each layer bit-identical to
+the single-layer call; `residual_norms` — per-layer median residual-stream norm
+over non-pad, non-first tokens; and `generate_steered_batch` — one prompt
+decoded N times in a single batch, each row under its own per-layer
+`Intervention` (greedy), with empty rows retried through the single-prompt
+generate path.
+
 The vector, steering, geometry, and evaluation modules depend on this protocol rather
 than directly on Transformers. For a Hugging Face architecture with an unfamiliar
 module tree, first configure `model.layer_path`, such as `transformer.blocks`.
@@ -37,7 +46,18 @@ profiles:
 ```
 
 Available profile fields (all optional): `layer_path`, `layer_regex`,
-`tokenizer_id`, `dtype`, `use_chat_template`, `trust_remote_code`.
+`tokenizer_id`, `dtype`, `use_chat_template`, `trust_remote_code`,
+`loader` (`"causal_lm"` or `"image_text_to_text"`; default `causal_lm`),
+`max_memory` (per-device memory map passed to `from_pretrained`),
+`attn_implementation`, `add_special_tokens` (boolean; set `false` when the
+chat template already emits BOS), `chat_template_kwargs` (dict merged into
+`apply_chat_template`, e.g. `date_string` or `reasoning_effort`),
+`system_prompt` (prepended as a system message), `generation_prefix` (string
+appended after the rendered template, e.g. the gpt-oss harmony final channel
+`<|channel|>final<|message|>`), and `single_device` (place the whole model on
+one GPU via `device_map={"": 0}`; required for Gemma-4 E-series). Loading uses
+the modern `dtype=` argument when the installed transformers supports it and
+falls back to `torch_dtype=` otherwise.
 
 Resolution order:
 
@@ -58,7 +78,9 @@ name steerable modules:
 
 To point an experiment at a different registry file, set the optional
 `model.model_registry` path field; when omitted, `HuggingFaceBackend` uses
-`configs/model_registry.yaml` if it exists and otherwise falls back to the
+`configs/model_registry.yaml` at the repository root (resolved from this
+package's location, not the process working directory) if that file exists and
+otherwise falls back to the
 built-in attribute walk. Registry errors (unknown profile fields, malformed YAML,
 zero regex matches) raise `ValueError` with the offending key or pattern.
 
