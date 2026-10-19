@@ -19,7 +19,7 @@ from .evaluation import (evaluate_multiple_choice, evaluate_perplexity,
 from .geometry import geometry_metrics
 from .geometry_decodanda import geometry_layer_task, select_examples
 from .aggregate import run_aggregate, run_generic_aggregate, summarize_by_alpha
-from .judge import judge_steering
+from .judge import judge_steering, read_steer_table
 from .models.huggingface import HuggingFaceBackend
 from .offtarget import (AttributeLabels, judge_offtarget_effects,
                         measure_projection_drift, summarize_offtarget_effects,
@@ -204,7 +204,7 @@ def command_judge(args) -> None:
     shard_index = getattr(args, "shard_index", 0) or 0
     if not 0 <= shard_index < num_exec_shards:
         raise ValueError(f"shard-index must be in [0, {num_exec_shards})")
-    frame = pd.read_csv(args.input, keep_default_na=False)
+    frame = read_steer_table(args.input)
     if judge.backend == "vllm":
         from .judge_vllm import VLLMJudgeBackend, judge_steering_vllm
 

@@ -341,3 +341,18 @@ def test_parse_judgement_validity_flag_still_production_semantics():
     assert parse_judgement("Decision: A")["valid_decision"] is True
     assert parse_judgement("nothing useful")["preferred"] == "T"
     assert parse_judgement("nothing useful")["valid_decision"] is False
+
+
+def test_boolean_like_target_labels_survive_reading_and_render_target_line(tmp_path):
+    from repsteer.judge import read_steer_table
+
+    path = tmp_path / "steer.csv"
+    pd.DataFrame({"task": ["truth", "truth"], "target_value": ["1", "0"],
+                  "target_attribute": ["true", "false"], "layer": [3, 3],
+                  "coefficient": [1.0, 1.0]}).to_csv(path, index=False)
+    frame = read_steer_table(path)
+    assert frame["target_attribute"].tolist() == ["true", "false"]
+    assert frame["target_value"].tolist() == ["1", "0"]
+    config = JudgeConfig(model=ModelConfig(model_id="m"), prompt_preset="generic",
+                         attribute_descriptions={"truth": {"true": "Target: TRUE", "false": "Target: FALSE"}})
+    assert "Target: TRUE" in render_judge_prompt(config, "truth", frame["target_attribute"][0], "a", "b")

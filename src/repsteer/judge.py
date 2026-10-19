@@ -262,6 +262,17 @@ def _ab(row: pd.Series, steered_is_a: bool) -> tuple[str, str]:
     return row["baseline_continuation"], row["steered_continuation"]
 
 
+# Label columns must stay strings: pandas would parse labels such as "true"/"false"
+# into booleans, and the judge's attribute lookup would then miss ("True").
+STEER_TABLE_STR_COLUMNS = ("task", "setup", "concept", "target_value", "target_attribute", "source_value")
+
+
+def read_steer_table(path) -> pd.DataFrame:
+    """Read a steer (or judged) CSV with empty strings kept and label columns as str."""
+
+    return pd.read_csv(path, keep_default_na=False, dtype={name: str for name in STEER_TABLE_STR_COLUMNS})
+
+
 def _task_and_target(row: pd.Series) -> tuple[str, str]:
     task = row["task"]
     target = row["target_attribute"] if "target_attribute" in row else row["target_value"]
