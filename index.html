@@ -1,0 +1,639 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Geometry → Steering Scaling Study</title>
+<meta name="description" content="Pre-registered test of whether representation geometry (CCGP, PS, SD) predicts activation-steering success and broken outputs beyond decodability, across 13 open-weight models and 14 concepts.">
+<meta name="robots" content="noindex">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap">
+<style>
+/* Layout: one centered reading column of cards; tokens below stand in for the dashboard kit's. */
+:root {
+  --font-anthropic-sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-anthropic-serif: "Source Serif 4", Georgia, "Times New Roman", serif;
+  --cds-font-size-caption: 0.8125rem; --cds-font-size-body: 0.9375rem; --cds-font-size-heading: 1.0625rem; --cds-font-size-title: 2rem;
+  --cds-font-weight-medium: 600;
+  --cds-gap-xs: 4px; --cds-gap-sm: 8px; --cds-gap-md: 16px; --cds-gap-lg: 24px; --cds-gap-xl: 40px;
+  --cds-pad-xs: 4px; --cds-pad-sm: 8px; --cds-pad-md: 12px; --cds-pad-lg: 20px;
+  --cds-radius: 10px; --cds-dur-slow: 300ms;
+  --color-bg: #f7f7f4; --color-panel: #fdfdfb; --color-fg: #17181a; --color-fg-muted: #5b5d63;
+  --color-border-line: #e2e1dc; --color-ok: #127a3a; --color-warn: #9a5b00; --color-bad: #b42323;
+  --cds-chart-grid: #ebeae5; --cds-chart-axis: #8f8f8a; --cds-chart-reference: #b9b8b1;
+  --cds-chart-status-critical: #e34948; --cds-surface-popover: #ffffff; --cds-border: #d9d8d2;
+  --cds-shadow-popover: 0 4px 16px rgba(20, 20, 30, .12); --cds-text-secondary: #5b5d63;
+  --series-1: #2a78d6; --series-2: #eb6834; --skeleton: #ebeae5;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --color-bg: #161718; --color-panel: #1e1f21; --color-fg: #eeeeea; --color-fg-muted: #a9aaa4;
+  --color-border-line: #333430; --color-ok: #5cc98a; --color-warn: #f0b552; --color-bad: #f07a7a;
+  --cds-chart-grid: #2c2d2b; --cds-chart-axis: #77786f; --cds-chart-reference: #5c5d57;
+  --cds-chart-status-critical: #e66767; --cds-surface-popover: #26272a; --cds-border: #3a3b38;
+  --cds-shadow-popover: 0 4px 16px rgba(0, 0, 0, .5); --cds-text-secondary: #a9aaa4;
+  --series-1: #3987e5; --series-2: #d95926; --skeleton: #2c2d2b; color-scheme: dark; } }
+:root[data-theme="dark"] {
+  --color-bg: #161718; --color-panel: #1e1f21; --color-fg: #eeeeea; --color-fg-muted: #a9aaa4;
+  --color-border-line: #333430; --color-ok: #5cc98a; --color-warn: #f0b552; --color-bad: #f07a7a;
+  --cds-chart-grid: #2c2d2b; --cds-chart-axis: #77786f; --cds-chart-reference: #5c5d57;
+  --cds-chart-status-critical: #e66767; --cds-surface-popover: #26272a; --cds-border: #3a3b38;
+  --cds-shadow-popover: 0 4px 16px rgba(0, 0, 0, .5); --cds-text-secondary: #a9aaa4;
+  --series-1: #3987e5; --series-2: #d95926; --skeleton: #2c2d2b; color-scheme: dark; }
+html { background: var(--color-bg); }
+body { margin: 0; background: var(--color-bg); color: var(--color-fg); font-family: var(--font-anthropic-sans); -webkit-font-smoothing: antialiased; }
+#dash-root { padding-block: 40px 56px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.dash-skeleton:empty, span.dash-skeleton, b.dash-skeleton { background: var(--skeleton); border-radius: 4px; color: transparent; }
+.ss-chart.dash-skeleton { background: var(--skeleton); border-radius: var(--cds-radius); }
+.ss-foot { max-width: 1120px; margin: 48px auto 0; font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); display: grid; gap: 6px; }
+.ss-foot a { color: inherit; }
+code { font-size: .92em; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+<style>
+.ss { max-width: 1120px; margin-inline: auto; display: grid; gap: var(--cds-gap-xl); font-family: var(--font-anthropic-sans); color: var(--color-fg); }
+.ss-head { display: grid; gap: var(--cds-gap-sm); }
+.ss-title { font-family: var(--font-anthropic-serif); font-weight: 400; font-size: var(--cds-font-size-title); line-height: 1.15; margin: 0; text-wrap: balance; }
+.ss-lede { font-size: var(--cds-font-size-body); line-height: 1.55; max-width: 68ch; margin: 0; color: var(--color-fg); }
+.ss-sub { font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); margin: 0; }
+.ss-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr)); gap: var(--cds-gap-md); }
+.ss-tile { background: var(--color-panel); border: 1px solid var(--color-border-line); border-radius: var(--cds-radius); padding: var(--cds-pad-lg); display: grid; gap: var(--cds-gap-xs); align-content: start; }
+.ss-tile .ss-big { font-family: var(--font-anthropic-serif); font-weight: 400; font-size: var(--cds-font-size-title); font-variant-numeric: tabular-nums; line-height: 1.1; }
+.ss-tile .ss-label { font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); line-height: 1.4; }
+.ss-warn { color: var(--color-warn); }
+.ss-bad { color: var(--color-bad); }
+.ss-sec { display: grid; gap: var(--cds-gap-md); }
+.ss-sec > h2 { font-size: var(--cds-font-size-heading); font-weight: var(--cds-font-weight-medium); margin: 0; }
+.ss-sec > p { margin: 0; max-width: 72ch; line-height: 1.55; font-size: var(--cds-font-size-body); }
+.ss-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 24rem), 1fr)); gap: var(--cds-gap-md); }
+.ss-card { background: var(--color-panel); border: 1px solid var(--color-border-line); border-radius: var(--cds-radius); padding: var(--cds-pad-lg); display: grid; gap: var(--cds-gap-sm); min-width: 0; align-content: start; }
+.ss-card h3 { font-size: var(--cds-font-size-heading); font-weight: var(--cds-font-weight-medium); margin: 0; }
+.ss-card .ss-note { font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); margin: 0; line-height: 1.45; }
+.ss-chart { position: relative; min-height: 260px; }
+.ss-chart.ss-tall { min-height: 340px; }
+.ss-chart svg { display: block; overflow: visible; }
+.ss-chart text { fill: var(--color-fg-muted); font-size: 11px; font-family: var(--font-anthropic-sans); }
+.ss-chart .ss-lab { fill: var(--color-fg); font-size: 12px; }
+.ss-tip { position: absolute; pointer-events: none; background: var(--cds-surface-popover); border: 1px solid var(--cds-border); border-radius: var(--cds-radius); box-shadow: var(--cds-shadow-popover); padding: var(--cds-pad-xs) var(--cds-pad-sm); font-size: var(--cds-font-size-caption); line-height: 1.45; white-space: nowrap; z-index: 2; }
+.ss-tip .ss-tip-h { color: var(--cds-text-secondary); }
+.ss-tip .ss-sw { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 6px; }
+.ss-toggle { display: inline-flex; gap: 0; border: 1px solid var(--color-border-line); border-radius: var(--cds-radius); overflow: hidden; width: fit-content; max-width: 100%; flex-wrap: wrap; }
+.ss-toggle button { font: inherit; font-size: var(--cds-font-size-caption); background: transparent; color: var(--color-fg-muted); border: 0; padding: var(--cds-pad-xs) var(--cds-pad-sm); cursor: pointer; }
+.ss-toggle button[aria-pressed="true"] { background: var(--color-bg); color: var(--color-fg); font-weight: var(--cds-font-weight-medium); }
+.ss-toggle button:focus-visible { outline: 2px solid var(--color-fg); outline-offset: -2px; }
+.ss-legend { display: flex; flex-wrap: wrap; gap: var(--cds-gap-md); font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); }
+.ss-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.ss-legend i { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+.ss-tablewrap { overflow-x: auto; min-width: 0; }
+.ss-table { border-collapse: collapse; width: 100%; font-size: var(--cds-font-size-caption); font-variant-numeric: tabular-nums; }
+.ss-table th, .ss-table td { padding: 6px 10px; text-align: right; border-bottom: 1px solid var(--color-border-line); white-space: nowrap; }
+.ss-table th:first-child, .ss-table td:first-child { text-align: left; }
+.ss-table th { color: var(--color-fg-muted); font-weight: var(--cds-font-weight-medium); position: sticky; top: 0; background: var(--color-panel); }
+.ss-table td.ss-txt { text-align: left; }
+.ss-chip { display: inline-block; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--color-border-line); }
+.ss-chip.yes { color: var(--color-ok); }
+.ss-chip.no { color: var(--color-fg-muted); }
+.ss-list { margin: 0; padding-left: 1.2em; display: grid; gap: var(--cds-gap-xs); line-height: 1.5; max-width: 80ch; font-size: var(--cds-font-size-body); }
+.ss-fail { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: inherit; color: var(--color-fg-muted); font-size: var(--cds-font-size-caption); }
+.ss-fail::before { content: ""; width: .375rem; height: .375rem; border-radius: 50%; background: var(--color-bad); }
+[data-dash-source-state=empty] { color: transparent; }
+[data-dash-source-state=refreshing] { opacity: .5; transition: opacity var(--cds-dur-slow); }
+</style>
+</head>
+<body>
+<div id="dash-root">
+<div class="ss">
+  <header class="ss-head" id="top">
+    <h1 class="ss-title" id="title">Geometry → steering: scaling study</h1>
+    <p class="ss-lede" id="takeaway">
+      Across <b data-source="study_facts" data-field="models" class="dash-skeleton">—</b> instruct models and
+      <b data-source="study_facts" data-field="concepts" class="dash-skeleton">—</b> binary concepts, no representation-geometry
+      measure has a dependable average effect on steering beyond decodability. The pre-registered rule says
+      “predicts beyond decodability” for <b data-source="verdict_summary" data-field="yes" data-where="grid=primary" class="dash-skeleton">—</b>
+      of <b data-source="verdict_summary" data-field="tests" data-where="grid=primary" class="dash-skeleton">—</b> tests, but that verdict
+      comes from effects that differ between models and concepts, in both directions.
+    </p>
+    <p class="ss-sub">Pre-registered analysis, run 2026-10-20. Judge: Qwen3.6-27B, with a GLM-4.5-Air re-judge of a 10% sample.</p>
+  </header>
+
+  <section class="ss-tiles" id="headline" aria-label="Headline figures">
+    <div class="ss-tile">
+      <div class="ss-big"><span data-source="verdict_summary" data-field="yes" data-where="grid=primary" class="dash-skeleton">—</span> / <span data-source="verdict_summary" data-field="tests" data-where="grid=primary" class="dash-skeleton">—</span></div>
+      <div class="ss-label">tests the pre-registered rule calls “predicts beyond decodability” (primary α grid)</div>
+    </div>
+    <div class="ss-tile">
+      <div class="ss-big"><span data-source="verdict_summary" data-field="fixed_sig" data-where="grid=primary" class="dash-skeleton">—</span> / <span data-source="verdict_summary" data-field="tests" data-where="grid=primary" class="dash-skeleton">—</span></div>
+      <div class="ss-label">tests whose average (fixed) effect reaches p &lt; .05 before multiplicity correction; none survive Holm</div>
+    </div>
+    <div class="ss-tile">
+      <div class="ss-big ss-warn"><span data-source="crossjudge" data-field="kappa_success" data-where="level=all" class="dash-skeleton">—</span></div>
+      <div class="ss-label">κ between the two judges on success, below the pre-registered .6 bar (a limitation)</div>
+    </div>
+    <div class="ss-tile">
+      <div class="ss-big ss-bad"><span data-source="h4" data-field="partial_r_ccgp_broken" data-where="grid=primary&amp;concept=cat_dog" class="dash-skeleton">—</span></div>
+      <div class="ss-label">H4: CCGP–broken partial r on Gemma-4-31B cat/dog. The earlier study found it negative; it does not replicate.</div>
+    </div>
+  </section>
+
+  <section class="ss-sec" id="design">
+    <h2>What was tested</h2>
+    <p>
+      Each of <b data-source="study_facts" data-field="models" class="dash-skeleton">—</b> models from
+      <b data-source="study_facts" data-field="families" class="dash-skeleton">—</b> families
+      (<span data-source="study_facts" data-field="min_params_b" class="dash-skeleton">—</span>B to
+      <span data-source="study_facts" data-field="max_params_b" class="dash-skeleton">—</span>B parameters) was steered on
+      <b data-source="study_facts" data-field="concepts" class="dash-skeleton">—</b> binary concepts at
+      <span data-source="study_facts" data-field="depths" class="dash-skeleton">—</span> relative depths and
+      <span data-source="study_facts" data-field="alpha_levels" class="dash-skeleton">—</span> steering strengths, giving
+      <b data-source="study_facts" data-field="layer_rows" class="dash-skeleton">—</b> model × concept × layer rows and
+      <b data-source="study_facts" data-field="judgements" class="dash-skeleton">—</b> pairwise judgements.
+      Vectors are general difference-of-means directions; strength α is relative to the layer's median residual norm.
+    </p>
+    <p>
+      For every layer we measured four geometry metrics on the concept's condition space: <b>CCGP</b> (cross-condition
+      generalization), <b>PS</b> (parallelism score), <b>SD</b> (share of balanced dichotomies decodable above 0.60) and
+      <b>SD mean acc</b> (their mean accuracy). Each was tested against two outcomes: <b>success</b> (the judge prefers the
+      steered output for the requested target) and <b>broken</b> (the judge calls the steered output broken), always
+      controlling for linear <b>decodability</b> and depth.
+    </p>
+  </section>
+
+  <section class="ss-sec" id="where">
+    <h2>Where steering works</h2>
+    <div class="ss-grid">
+      <div class="ss-card" id="card-alpha">
+        <h3>Success and broken rate by steering strength</h3>
+        <p class="ss-note">Mean over all models, concepts and depths. α = 2 breaks almost everything, so the primary outcome averages α 0.0625–1.</p>
+        <div class="ss-legend" aria-hidden="true"><span><i class="lg0"></i>Success</span><span><i class="lg1"></i>Broken</span></div>
+        <div class="ss-chart dash-skeleton" id="chart-alpha" data-source="profiles"></div>
+      </div>
+      <div class="ss-card" id="card-depth">
+        <h3>Success and broken rate by relative depth</h3>
+        <p class="ss-note">Primary α mean. The middle-layer window seen in the earlier Gemma work holds across all models.</p>
+        <div class="ss-legend" aria-hidden="true"><span><i class="lg0"></i>Success</span><span><i class="lg1"></i>Broken</span></div>
+        <div class="ss-chart dash-skeleton" id="chart-depth" data-source="profiles"></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="ss-sec" id="result">
+    <h2>Does geometry predict steering beyond decodability?</h2>
+    <p>
+      Points are the pooled within-cell partial correlation of each metric with each outcome, controlling decodability and depth,
+      with 95% intervals. Every interval crosses zero on the primary grid. The likelihood-ratio test the pre-registration used adds the
+      metric's average effect and its random slopes by model and concept together; splitting it shows the gain comes almost entirely
+      from the slopes, meaning the relationship varies rather than holding in general.
+    </p>
+    <div class="ss-toggle" role="group" aria-label="α grid" id="grid-toggle">
+      <button type="button" id="grid-primary" data-grid="primary" aria-pressed="true">Primary grid (α 0.0625–1)</button>
+      <button type="button" id="grid-prereg" data-grid="prereg" aria-pressed="false">Pre-registered grid (α 0.25–2)</button>
+    </div>
+    <div class="ss-card" id="card-forest">
+      <h3>Pooled within-cell partial r, with 95% CI</h3>
+      <p class="ss-note">Right of zero: higher metric goes with a higher rate. A chip marks the pre-registered verdict.</p>
+      <div class="ss-chart ss-tall dash-skeleton" id="chart-forest" data-source="results"></div>
+    </div>
+    <div class="ss-card" id="card-results">
+      <h3>All eight tests</h3>
+      <p class="ss-note">Fixed coef is the metric's average effect per within-cell SD. “Average effect” and “Slope variance” are the exploratory split of the pre-registered test (χ², p).</p>
+      <div class="ss-tablewrap">
+        <table class="ss-table" id="table-results" data-source="results" data-row-key="grid,test">
+          <thead><tr>
+            <th data-field="test">Test</th>
+            <th data-field="coef">Fixed coef</th>
+            <th data-field="p_holm">LRT p (Holm)</th>
+            <th data-field="partial_r_pooled">Pooled r</th>
+            <th data-field="prereg_verdict">Prereg verdict</th>
+            <th data-field="fixed_lrt">Average effect χ²</th>
+            <th data-field="p_fixed">p</th>
+            <th data-field="slope_lrt">Slope variance χ²</th>
+            <th data-field="p_slopes">p</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section class="ss-sec" id="spread">
+    <h2>The relationship changes sign across models and concepts</h2>
+    <p>
+      Mean within-cell partial r of CCGP with the outcome, over each model's or concept's included cells. Even within one family the sign
+      can flip. Size, mixture-of-experts and concept abstractness moderate nothing; family moderates only the shattering measures' link to
+      broken outputs.
+    </p>
+    <div class="ss-toggle" role="group" aria-label="Outcome" id="outcome-toggle">
+      <button type="button" id="out-success" data-outcome="success" aria-pressed="true">Success</button>
+      <button type="button" id="out-broken" data-outcome="broken" aria-pressed="false">Broken</button>
+    </div>
+    <div class="ss-grid">
+      <div class="ss-card" id="card-by-model">
+        <h3>CCGP partial r by model</h3>
+        <p class="ss-note">Cells excluded for collinearity or a flat outcome are left out, as in the pooled estimate.</p>
+        <div class="ss-chart ss-tall dash-skeleton" id="chart-by-model" data-source="models"></div>
+      </div>
+      <div class="ss-card" id="card-by-concept">
+        <h3>CCGP partial r by concept</h3>
+        <p class="ss-note">Catdog language has almost no usable cells: its decodability is near ceiling, so CCGP and decodability move together.</p>
+        <div class="ss-chart ss-tall dash-skeleton" id="chart-by-concept" data-source="concepts"></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="ss-sec" id="validity">
+    <h2>How much to trust the outcomes</h2>
+    <p>
+      Two judges agree reasonably on broken outputs and less on success. The judge already calls part of the unsteered baselines broken,
+      most on refusal, harm, truth and language, which are also the concepts where judges and automatic metrics agree least.
+    </p>
+    <div class="ss-grid">
+      <div class="ss-card" id="card-crossjudge">
+        <h3>Judge agreement by model family</h3>
+        <p class="ss-note">Qwen3.6-27B vs GLM-4.5-Air on the same rows.</p>
+        <div class="ss-tablewrap">
+          <table class="ss-table" id="table-crossjudge" data-source="crossjudge" data-row-key="level">
+            <thead><tr>
+              <th data-field="level">Family</th>
+              <th data-field="rows">Rows</th>
+              <th data-field="kappa_success">κ success</th>
+              <th data-field="kappa_broken">κ broken</th>
+              <th data-field="success_rate_qwen">Success (Qwen)</th>
+              <th data-field="success_rate_glm">Success (GLM)</th>
+            </tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="ss-card" id="card-h4">
+        <h3>H4 replication on Gemma-4-31B</h3>
+        <p class="ss-note">Partial r of CCGP with broken rate, controlling decodability, across layers. The earlier study found this negative.</p>
+        <div class="ss-tablewrap">
+          <table class="ss-table" id="table-h4" data-source="h4" data-row-key="grid,concept">
+            <thead><tr>
+              <th data-field="concept">Concept</th>
+              <th data-field="grid">α grid</th>
+              <th data-field="partial_r_ccgp_broken">Partial r</th>
+            </tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    <div class="ss-card" id="card-concepts">
+      <h3>Concepts</h3>
+      <p class="ss-note">Rates are primary α means. Baseline broken is the judge's broken rate on unsteered outputs. Automatic metric κ is agreement with the judge's success label, where a metric exists.</p>
+      <div class="ss-tablewrap">
+        <table class="ss-table" id="table-concepts" data-source="concepts" data-row-key="concept">
+          <thead><tr>
+            <th data-field="concept">Concept</th>
+            <th data-field="abstractness">Type</th>
+            <th data-field="success">Success</th>
+            <th data-field="broken">Broken</th>
+            <th data-field="baseline_broken">Baseline broken</th>
+            <th data-field="kappa_success">κ success</th>
+            <th data-field="kappa_broken">κ broken</th>
+            <th data-field="auto_metric">Automatic metric</th>
+            <th data-field="auto_kappa">Metric κ</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section class="ss-sec" id="models">
+    <h2>Models</h2>
+    <div class="ss-card" id="card-models">
+      <h3>Steering outcomes by model</h3>
+      <p class="ss-note">Primary α means over all concepts and depths. No consistent size trend within a family.</p>
+      <div class="ss-tablewrap">
+        <table class="ss-table" id="table-models" data-source="models" data-row-key="model">
+          <thead><tr>
+            <th data-field="model">Model</th>
+            <th data-field="family">Family</th>
+            <th data-field="params_b">Params (B)</th>
+            <th data-field="success">Success</th>
+            <th data-field="broken">Broken</th>
+            <th data-field="ccgp_r_success">CCGP r, success</th>
+            <th data-field="ccgp_r_broken">CCGP r, broken</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section class="ss-sec" id="method">
+    <h2>Method and deviations</h2>
+    <ul class="ss-list">
+      <li>Primary test per outcome and metric: mixed model <code>Y ~ decod_w + M_w + d + d² + (1 + M_w | model) + (1 + M_w | concept)</code> against the same model without M, likelihood-ratio test with boundary-mixture p, Holm over the eight tests. Predictors are standardized within each model × concept cell, so only across-layer variation counts.</li>
+      <li>Decision rule, fixed in advance: a metric “predicts beyond decodability” only if its Holm-corrected test is significant and the pooled within-cell partial r has the same sign as its coefficient.</li>
+      <li>The split of the test into average effect and slope variance was added after the pre-registered analysis ran and is reported as exploratory.</li>
+      <li>Deviations: one concept fewer than the plan listed (a counting error in the plan); the α grid was extended down to 0.0625 before any geometry–outcome relationship was computed, and α = 2 was dropped from the primary mean; H4 covers two vector groups because the sweep used general vectors only; the cross-judge sample is a 10% position shard of every unit.</li>
+      <li>Cells whose outcome barely varies across layers, or whose metric is nearly collinear with decodability, are excluded from the pooled estimates as pre-registered.</li>
+    </ul>
+  </section>
+</div>
+<footer class="ss-foot">
+  <span>Data behind every chart and table: <a href="data/study_facts.csv">study_facts.csv</a> · <a href="data/profiles.csv">profiles.csv</a> · <a href="data/results.csv">results.csv</a> · <a href="data/models.csv">models.csv</a> · <a href="data/concepts.csv">concepts.csv</a> · <a href="data/crossjudge.csv">crossjudge.csv</a> · <a href="data/h4.csv">h4.csv</a></span>
+  <span>Aggregated results only; no model generations or prompts are published here.</span>
+</footer>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"></script>
+<script>
+/* Minimal stand-in for the dashboard runtime: loads the CSVs beside this page. */
+(() => {
+  const ids = ['study_facts', 'profiles', 'results', 'models', 'concepts', 'crossjudge', 'h4'];
+  const store = {}, calcs = {}, listeners = [];
+  const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  ids.forEach((id) => { store[id] = { status: 'loading', data: [], columns: [] }; });
+  const notify = () => listeners.forEach((fn) => fn());
+  window.dash = {
+    get colors() { return [css('--series-1'), css('--series-2')]; },
+    data(id) {
+      if (store[id]) return store[id];
+      const c = calcs[id];
+      if (!c) return { status: 'missing', data: [] };
+      const inputs = c.inputs.map((i) => this.data(i));
+      if (inputs.some((d) => d.status !== 'ok')) return { status: 'loading', data: [] };
+      return { status: 'ok', data: c.fn(...inputs.map((d) => d.data)) };
+    },
+    calc(id, spec) { calcs[id] = spec; },
+    onData(fn) { listeners.push(fn); fn(); },
+    setLink(id) { try { history.replaceState(null, '', `#${id}`); } catch (e) { /* ignore */ } },
+  };
+  ids.forEach((id) => d3.csv(`data/${id}.csv`).then((rows) => {
+    store[id] = { status: 'ok', data: rows, columns: rows.columns };
+    notify();
+  }, () => { store[id] = { status: 'error', data: [] }; notify(); }));
+  let w = window.innerWidth;
+  window.addEventListener('resize', () => { if (Math.abs(window.innerWidth - w) > 20) { w = window.innerWidth; notify(); } });
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', notify);
+})();
+</script>
+<script>
+(() => {
+  const state = { grid: 'primary', outcome: 'success' };
+  const num = (v) => (v === '' || v == null ? NaN : Number(v));
+  const f2 = d3.format('.2f'), f3 = d3.format('.3f'), pct = d3.format('.0%'), sgn2 = d3.format('+.2f'), sgn3 = d3.format('+.3f'), int = d3.format(',');
+  const fp = (v) => (Number.isNaN(v) ? '—' : v < 0.001 ? '<0.001' : f3(v));
+  const ID = ['study_facts', 'profiles', 'results', 'models', 'concepts', 'crossjudge', 'h4'];
+
+  dash.calc('verdict_summary', {
+    inputs: ['results'],
+    title: 'Verdict counts per grid',
+    description: 'Per α grid: number of tests, pre-registered “yes” verdicts, and tests whose fixed-effect-only LRT has p < .05.',
+    fn: (results) => ['primary', 'prereg'].map((grid) => {
+      const r = results.filter((x) => x.grid === grid);
+      return { grid, tests: r.length, yes: r.filter((x) => x.prereg_verdict === 'yes').length,
+        fixed_sig: r.filter((x) => Number(x.p_fixed) < 0.05).length };
+    }),
+  });
+
+  const fills = {
+    study_facts: { models: int, concepts: int, families: int, depths: int, alpha_levels: int, layer_rows: int, judgements: int,
+      min_params_b: (v) => d3.format('.1f')(v), max_params_b: (v) => d3.format('.0f')(v) },
+    verdict_summary: { yes: int, tests: int, fixed_sig: int },
+    crossjudge: { kappa_success: f2 },
+    h4: { partial_r_ccgp_broken: sgn2 },
+  };
+
+  function fillMarks() {
+    for (const [id, fields] of Object.entries(fills)) {
+      const d = dash.data(id);
+      document.querySelectorAll(`.ss [data-source="${id}"][data-field]`).forEach((el) => {
+        if (el.closest('table')) return;
+        if (d.status !== 'ok') { el.textContent = '—'; return; }
+        const where = new URLSearchParams((el.getAttribute('data-where') || '').replace(/&amp;/g, '&'));
+        const row = d.data.find((r) => [...where].every(([k, v]) => String(r[k]) === v)) || d.data[0];
+        const fmt = fields[el.dataset.field] || ((v) => v);
+        const v = row ? num(row[el.dataset.field]) : NaN;
+        el.textContent = Number.isNaN(v) ? '—' : fmt(v);
+        el.classList.remove('dash-skeleton');
+      });
+    }
+  }
+
+  function failed(el, id) {
+    const s = dash.data(id).status;
+    if (s === 'ok') { el.classList.remove('dash-skeleton'); return false; }
+    el.replaceChildren();
+    if (s === 'error' || s === 'connect' || s === 'declined' || s === 'missing') {
+      el.classList.remove('dash-skeleton');
+      const f = document.createElement('div'); f.className = 'ss-fail'; f.textContent = 'Failed to load'; el.append(f);
+    } else el.classList.add('dash-skeleton');
+    return true;
+  }
+
+  function tooltip(box) {
+    let tip = box.querySelector('.ss-tip');
+    if (!tip) { tip = document.createElement('div'); tip.className = 'ss-tip'; tip.hidden = true; box.append(tip); }
+    return {
+      show(x, y, head, lines) {
+        tip.replaceChildren();
+        const h = document.createElement('div'); h.className = 'ss-tip-h'; h.textContent = head; tip.append(h);
+        for (const [color, label, value] of lines) {
+          const l = document.createElement('div');
+          if (color) { const s = document.createElement('span'); s.className = 'ss-sw'; s.style.background = color; l.append(s); }
+          l.append(document.createTextNode(`${label}: ${value}`)); tip.append(l);
+        }
+        tip.hidden = false;
+        const bw = box.clientWidth, tw = tip.offsetWidth;
+        tip.style.left = `${Math.max(0, Math.min(bw - tw, x + 12))}px`;
+        tip.style.top = `${Math.max(0, y - tip.offsetHeight - 8)}px`;
+      },
+      hide() { tip.hidden = true; },
+    };
+  }
+
+  function textWidth(svg, strings, cls) {
+    const t = svg.append('text').attr('class', cls || null);
+    let w = 0; for (const s of strings) { t.text(s); w = Math.max(w, t.node().getComputedTextLength()); }
+    t.remove(); return w;
+  }
+
+  function lineChart(el, rows, xLabel, xTitle) {
+    el.replaceChildren();
+    const W = Math.max(280, el.clientWidth), H = 260;
+    const svg = d3.select(el).append('svg').attr('width', '100%').attr('viewBox', `0 0 ${W} ${H}`);
+    const yTicks = [0, 0.25, 0.5, 0.75, 1];
+    const m = { t: 12, r: 16, b: 44, l: textWidth(svg, yTicks.map(pct)) + 10 };
+    const x = d3.scalePoint(rows.map((r) => r.label), [m.l, W - m.r]).padding(0.3);
+    const y = d3.scaleLinear([0, 1], [H - m.b, m.t]);
+    svg.append('g').selectAll('line').data(yTicks).join('line')
+      .attr('x1', m.l).attr('x2', W - m.r).attr('y1', y).attr('y2', y).attr('stroke', 'var(--cds-chart-grid)');
+    svg.append('g').selectAll('text').data(yTicks).join('text')
+      .attr('x', m.l - 6).attr('y', (d) => y(d) + 4).attr('text-anchor', 'end').text(pct);
+    const step = Math.ceil(rows.length / Math.max(1, Math.floor((W - m.l - m.r) / 44)));
+    svg.append('g').selectAll('text').data(rows.filter((_, i) => i % step === 0)).join('text')
+      .attr('x', (d) => x(d.label)).attr('y', H - m.b + 18).attr('text-anchor', 'middle').text((d) => d.label);
+    svg.append('text').attr('x', (m.l + W - m.r) / 2).attr('y', H - 6).attr('text-anchor', 'middle').text(xTitle);
+    const series = [['success', 'Success', dash.colors[0]], ['broken', 'Broken', dash.colors[1]]];
+    for (const [key, , color] of series) {
+      svg.append('path').datum(rows).attr('fill', 'none').attr('stroke', color).attr('stroke-width', 2)
+        .attr('stroke-linecap', 'round').attr('stroke-linejoin', 'round')
+        .attr('d', d3.line((d) => x(d.label), (d) => y(d[key])));
+      svg.append('g').selectAll('circle').data(rows).join('circle')
+        .attr('cx', (d) => x(d.label)).attr('cy', (d) => y(d[key])).attr('r', 3).attr('fill', color);
+    }
+    const tip = tooltip(el), hover = svg.append('line').attr('stroke', 'var(--cds-chart-reference)').attr('y1', m.t).attr('y2', H - m.b).attr('opacity', 0);
+    svg.append('rect').attr('x', m.l).attr('y', m.t).attr('width', W - m.l - m.r).attr('height', H - m.t - m.b).attr('fill', 'transparent')
+      .on('pointermove', (ev) => {
+        const [px] = d3.pointer(ev);
+        const d = rows.reduce((a, b) => (Math.abs(x(b.label) - px) < Math.abs(x(a.label) - px) ? b : a));
+        hover.attr('x1', x(d.label)).attr('x2', x(d.label)).attr('opacity', 1);
+        const sx = x(d.label) / W * el.clientWidth;
+        tip.show(sx, y(Math.max(d.success, d.broken)) / H * el.clientHeight, `${xLabel} ${d.label}`,
+          series.map(([k, n, c]) => [c, n, pct(d[k])]));
+      })
+      .on('pointerleave', () => { hover.attr('opacity', 0); tip.hide(); });
+  }
+
+  function forest(el, rows) {
+    el.replaceChildren();
+    const W = Math.max(300, el.clientWidth), rowH = 36, H = rows.length * rowH + 40;
+    const svg = d3.select(el).append('svg').attr('width', '100%').attr('viewBox', `0 0 ${W} ${H}`);
+    const lw = textWidth(svg, rows.map((r) => r.test), 'ss-lab') + 12, chipW = 44;
+    const lim = Math.max(0.2, d3.max(rows, (r) => Math.max(Math.abs(r.lo), Math.abs(r.hi))) * 1.1);
+    const x = d3.scaleLinear([-lim, lim], [lw, W - chipW - 8]).nice();
+    const ticks = x.ticks(Math.max(3, Math.floor((W - lw - chipW) / 70)));
+    svg.append('g').selectAll('line').data(ticks).join('line').attr('x1', x).attr('x2', x).attr('y1', 8).attr('y2', H - 28)
+      .attr('stroke', (d) => (d === 0 ? 'var(--cds-chart-axis)' : 'var(--cds-chart-grid)'));
+    svg.append('g').selectAll('text').data(ticks).join('text').attr('x', x).attr('y', H - 12).attr('text-anchor', 'middle').text(sgn2);
+    const tip = tooltip(el);
+    rows.forEach((r, i) => {
+      const cy = 8 + i * rowH + rowH / 2, color = r.outcome === 'success' ? dash.colors[0] : dash.colors[1];
+      svg.append('text').attr('class', 'ss-lab').attr('x', lw - 12).attr('y', cy + 4).attr('text-anchor', 'end').text(r.test);
+      svg.append('line').attr('x1', x(r.lo)).attr('x2', x(r.hi)).attr('y1', cy).attr('y2', cy).attr('stroke', color).attr('stroke-width', 2).attr('stroke-linecap', 'round');
+      svg.append('circle').attr('cx', x(r.r)).attr('cy', cy).attr('r', 5).attr('fill', color);
+      svg.append('text').attr('x', W - chipW / 2).attr('y', cy + 4).attr('text-anchor', 'middle')
+        .style('fill', r.verdict === 'yes' ? 'var(--color-ok)' : 'var(--color-fg-muted)').text(r.verdict);
+      svg.append('rect').attr('x', lw).attr('y', cy - rowH / 2).attr('width', W - lw).attr('height', rowH).attr('fill', 'transparent')
+        .on('pointermove', () => tip.show(x(r.r) / W * el.clientWidth, cy / H * el.clientHeight, r.test,
+          [[color, 'Pooled r', sgn3(r.r)], [null, '95% CI', `${sgn3(r.lo)} to ${sgn3(r.hi)}`], [null, 'Prereg verdict', r.verdict]]))
+        .on('pointerleave', () => tip.hide());
+    });
+  }
+
+  function hbars(el, rows) {
+    el.replaceChildren();
+    const W = Math.max(280, el.clientWidth), barH = 16, gap = 8, H = rows.length * (barH + gap) + 34;
+    const svg = d3.select(el).append('svg').attr('width', '100%').attr('viewBox', `0 0 ${W} ${H}`);
+    const lw = textWidth(svg, rows.map((r) => r.label), 'ss-lab') + 12;
+    const vw = textWidth(svg, ['+0.00']) + 8;
+    const lim = Math.max(0.1, d3.max(rows, (r) => Math.abs(r.v)) || 0.1);
+    const x = d3.scaleLinear([-lim, lim], [lw + vw, W - vw]).nice();
+    const ticks = x.ticks(Math.max(3, Math.floor((W - lw - 2 * vw) / 70)));
+    svg.append('g').selectAll('line').data(ticks).join('line').attr('x1', x).attr('x2', x).attr('y1', 4).attr('y2', H - 26)
+      .attr('stroke', (d) => (d === 0 ? 'var(--cds-chart-axis)' : 'var(--cds-chart-grid)'));
+    svg.append('g').selectAll('text').data(ticks).join('text').attr('x', x).attr('y', H - 10).attr('text-anchor', 'middle').text(sgn2);
+    const tip = tooltip(el);
+    rows.forEach((r, i) => {
+      const y0 = 4 + i * (barH + gap), color = r.v >= 0 ? dash.colors[0] : 'var(--cds-chart-status-critical)';
+      svg.append('text').attr('class', 'ss-lab').attr('x', lw - 12).attr('y', y0 + barH / 2 + 4).attr('text-anchor', 'end').text(r.label);
+      if (Number.isNaN(r.v)) return;
+      const a = x(Math.min(0, r.v)), b = x(Math.max(0, r.v));
+      svg.append('rect').attr('x', a).attr('y', y0).attr('width', Math.max(1, b - a)).attr('height', barH).attr('rx', 4).attr('fill', color)
+        .on('pointermove', () => tip.show((r.v >= 0 ? b : a) / W * el.clientWidth, y0 / H * el.clientHeight, r.label,
+          [[color, 'Mean partial r', sgn3(r.v)], [null, 'Cells', int(r.n)]]))
+        .on('pointerleave', () => tip.hide());
+      svg.append('text').attr('x', r.v >= 0 ? b + 4 : a - 4).attr('y', y0 + barH / 2 + 4)
+        .attr('text-anchor', r.v >= 0 ? 'start' : 'end').text(sgn2(r.v));
+    });
+  }
+
+  function table(el, id, rows, keyCols, cols) {
+    const tbody = el.querySelector('tbody');
+    tbody.replaceChildren();
+    for (const r of rows) {
+      const tr = document.createElement('tr');
+      tr.dataset.key = keyCols.map((k) => encodeURIComponent(r[k])).join(',');
+      for (const [field, fmt, cls] of cols) {
+        const td = document.createElement('td');
+        if (cls) td.className = cls;
+        const raw = r[field];
+        if (fmt === 'chip') { const s = document.createElement('span'); s.className = `ss-chip ${raw}`; s.textContent = raw; td.append(s); }
+        else td.textContent = fmt ? (raw === '' || raw == null ? '—' : fmt(num(raw))) : (raw || '—');
+        tr.append(td);
+      }
+      tbody.append(tr);
+    }
+  }
+
+  function render() {
+    fillMarks();
+    const prof = dash.data('profiles');
+    for (const [elId, profile, xl, xt, lab] of [
+      ['chart-alpha', 'alpha', 'α', 'Steering strength α (relative to median residual norm)', (v) => d3.format('')(v)],
+      ['chart-depth', 'depth', 'Depth', 'Relative depth', (v) => f2(v)]]) {
+      const el = document.getElementById(elId);
+      if (failed(el, 'profiles')) continue;
+      const rows = prof.data.filter((r) => r.profile === profile)
+        .map((r) => ({ label: lab(num(r.level)), success: num(r.success), broken: num(r.broken) }));
+      lineChart(el, rows, xl, xt);
+    }
+    const res = dash.data('results');
+    const forestEl = document.getElementById('chart-forest');
+    if (!failed(forestEl, 'results')) {
+      const rows = res.data.filter((r) => r.grid === state.grid).map((r) => ({ test: r.test, outcome: r.outcome,
+        r: num(r.partial_r_pooled), lo: num(r.partial_r_ci_low), hi: num(r.partial_r_ci_high), verdict: r.prereg_verdict }));
+      forest(forestEl, rows);
+    }
+    const tr = document.getElementById('table-results');
+    if (res.status === 'ok') table(tr, 'results', res.data.filter((r) => r.grid === state.grid), ['grid', 'test'], [
+      ['test', null, 'ss-txt'], ['coef', sgn3], ['p_holm', fp], ['partial_r_pooled', sgn3], ['prereg_verdict', 'chip'],
+      ['fixed_lrt', f2], ['p_fixed', fp], ['slope_lrt', f2], ['p_slopes', fp]]);
+    const key = `ccgp_r_${state.outcome}`, nkey = `ccgp_cells_${state.outcome}`;
+    for (const [elId, id, labelKey] of [['chart-by-model', 'models', 'model'], ['chart-by-concept', 'concepts', 'concept']]) {
+      const el = document.getElementById(elId);
+      if (failed(el, id)) continue;
+      const rows = dash.data(id).data.map((r) => ({ label: r[labelKey], v: num(r[key]), n: num(r[nkey]) }))
+        .sort((a, b) => (Number.isNaN(b.v) ? -1 : Number.isNaN(a.v) ? 1 : b.v - a.v));
+      hbars(el, rows);
+    }
+    const xj = dash.data('crossjudge');
+    if (xj.status === 'ok') table(document.getElementById('table-crossjudge'), 'crossjudge', xj.data, ['level'], [
+      ['level', null, 'ss-txt'], ['rows', int], ['kappa_success', f2], ['kappa_broken', f2], ['success_rate_qwen', pct], ['success_rate_glm', pct]]);
+    const h4 = dash.data('h4');
+    if (h4.status === 'ok') table(document.getElementById('table-h4'), 'h4', h4.data, ['grid', 'concept'], [
+      ['concept', null, 'ss-txt'], ['grid', null], ['partial_r_ccgp_broken', sgn2]]);
+    const con = dash.data('concepts');
+    if (con.status === 'ok') table(document.getElementById('table-concepts'), 'concepts',
+      [...con.data].sort((a, b) => num(b.success) - num(a.success)), ['concept'], [
+      ['concept', null, 'ss-txt'], ['abstractness', null], ['success', pct], ['broken', pct], ['baseline_broken', pct],
+      ['kappa_success', f2], ['kappa_broken', f2], ['auto_metric', null], ['auto_kappa', f2]]);
+    const mod = dash.data('models');
+    if (mod.status === 'ok') table(document.getElementById('table-models'), 'models',
+      [...mod.data].sort((a, b) => num(b.success) - num(a.success)), ['model'], [
+      ['model', null, 'ss-txt'], ['family', null], ['params_b', (v) => d3.format('.1f')(v)], ['success', pct], ['broken', pct],
+      ['ccgp_r_success', sgn2], ['ccgp_r_broken', sgn2]]);
+  }
+
+  function bindToggle(groupId, attr, stateKey) {
+    const group = document.getElementById(groupId);
+    group.addEventListener('click', (ev) => {
+      const b = ev.target.closest('button'); if (!b) return;
+      state[stateKey] = b.dataset[attr];
+      group.querySelectorAll('button').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+      render();
+    });
+  }
+  bindToggle('grid-toggle', 'grid', 'grid');
+  bindToggle('outcome-toggle', 'outcome', 'outcome');
+  document.querySelectorAll('.lg0').forEach((e) => { e.style.background = dash.colors[0]; });
+  document.querySelectorAll('.lg1').forEach((e) => { e.style.background = dash.colors[1]; });
+
+  let first = true;
+  dash.onData(() => {
+    ID.forEach((id) => dash.data(id));
+    render();
+    if (first && ID.every((id) => dash.data(id).status === 'ok')) {
+      first = false;
+      const named = document.getElementById(location.hash.slice(1));
+      if (named) { named.scrollIntoView(); dash.setLink(named.id); }
+    }
+  });
+})();
+</script>
+</body>
+</html>

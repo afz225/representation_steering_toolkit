@@ -1,0 +1,7 @@
+group,level,rows,decision_agreement,kappa_decision,kappa_success,kappa_broken,success_rate_qwen,success_rate_glm,broken_rate_qwen,broken_rate_glm
+overall,all,111846,0.5826,0.3483,0.5219,0.7005,0.1523,0.2076,0.5782,0.4383
+family,gemma,25814,0.561,0.3177,0.5439,0.7865,0.1412,0.184,0.5782,0.4873
+family,gpt-oss,8600,0.583,0.3574,0.6164,0.7836,0.1392,0.1885,0.6776,0.5827
+family,granite,25810,0.6038,0.3305,0.3607,0.631,0.0892,0.1564,0.6066,0.4285
+family,olmo,17208,0.6147,0.3749,0.4874,0.6251,0.1935,0.2656,0.4618,0.2933
+family,qwen,34414,0.5666,0.3497,0.5707,0.6924,0.1908,0.2396,0.5901,0.4455

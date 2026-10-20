@@ -1,0 +1,5 @@
+grid,concept,n_layers,partial_r_ccgp_broken
+prereg,cat_dog,12,0.562
+prereg,catdog_style,12,0.7051
+primary,cat_dog,12,0.5644
+primary,catdog_style,12,0.6937
