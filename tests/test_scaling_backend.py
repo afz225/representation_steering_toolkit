@@ -171,7 +171,7 @@ def test_registry_resolves_new_model_fields():
     gptoss = reg.resolve("openai/gpt-oss-120b")
     assert gptoss.layer_path == "model.layers"
     assert gptoss.generation_prefix == "<|channel|>final<|message|>"
-    assert gptoss.chat_template_kwargs == {"reasoning_effort": "low"}
+    assert gptoss.chat_template_kwargs == {"reasoning_effort": "low", "fixed_date": "2026-10-17"}
     granite = reg.resolve("ibm-granite/granite-4.2-8b")
     assert granite.layer_path == "model.layers"
     judge = reg.resolve("Qwen/Qwen3.6-27B")
