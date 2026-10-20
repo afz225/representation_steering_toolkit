@@ -9,8 +9,10 @@ are real social-media posts compiled by third parties, and redistribution of the
 annotated CSVs is not clearly permitted. Instead this directory ships:
 
 - `manifest.json` — per-candidate fingerprints (sha256 of the whitespace-stripped
-  text), cell, and split membership for all 856 candidates, exactly as used in
-  the production split.
+  text), cell, split membership and row position for all 856 candidates, exactly
+  as used in the production split.
+- `rebuild_from_manifest.py` — rebuilds the exact production split CSVs from the
+  public source texts and the manifest (no re-annotation).
 - `verify_split.py` — proves a locally rebuilt split matches the manifest
   (fingerprints, cells, split sizes).
 - `prepare_toxicity_splits.py` — the deterministic split builder, byte-for-byte
@@ -91,22 +93,53 @@ An optional batch-labeling runner is provided at
   whitespace-stripped text (so texts can be matched without ever being shipped).
 - `cell` in the manifest = `[language, toxicity_bin, gender_bin]`.
 - `split` ∈ {`geometry_400`, `vector_construction_256`, `evaluation_200`}.
+- `row` (manifest version 2) = 0-based position of the candidate in its split CSV.
 
 ## Rebuilding the data locally
 
-1. Download the `en` and `ar` splits of
-   `textdetox/multilingual_toxicity_dataset` from Hugging Face.
-2. Run the gpt-4.1-mini annotation with the exact developer prompt above (see
-   `scripts/toxicity/batch_label_toxicity.py` for an OpenAI Batch API runner
-   stub; the production run used the 2026-03-25 batch snapshot
-   `openai_data.zip`).
-3. Assemble `{en,ar}_labeled.csv` with columns `text, toxic, mentions_gender,
-   mentions_location` (plus the remaining schema columns; the splitter only
-   reads those four).
-4. `python datasets/toxicity/prepare_toxicity_splits.py --input-dir <labeled_dir> --output-dir <out>`
-5. `python datasets/toxicity/verify_split.py --splits-dir <out>`
-   → must print `OK: 856 rows ...` (verified against the production CSVs before
-   release; the port reproduced all three split CSVs byte-identically).
+### Exact rebuild (recommended)
+
+Our annotations for the 856 candidates (toxicity and gender bins, split and row
+order) are in `manifest.json`, so the paper's splits can be rebuilt exactly from
+the public texts alone, with no API calls:
+
+```bash
+python datasets/toxicity/rebuild_from_manifest.py --from-hub --output-dir toxicity_splits
+python datasets/toxicity/verify_split.py --splits-dir toxicity_splits
+```
+
+`--from-hub` downloads the `en` and `ar` parquet files of
+`textdetox/multilingual_toxicity_dataset` (needs `huggingface_hub`); with
+`--source-dir DIR` it reads local `DIR/{en,ar}.{parquet,csv,jsonl}` instead. The
+script matches each candidate by fingerprint and writes the three split CSVs in
+the production layout and order. Tested 2026-10-20 from the Hub and from local
+copies: all three CSVs are byte-identical to the ones used in the paper, and
+`verify_split.py` prints `OK: 856 rows ...`.
+
+### Re-annotating from scratch
+
+To regenerate the annotations themselves, run the gpt-4.1-mini pipeline with
+`scripts/toxicity/batch_label_toxicity.py` (see its `--help`):
+
+1. `export-texts --language en --from-hub --output work/texts_en.csv` (and `ar`)
+2. `build-batch` writes Batch API input shards; tested to reproduce all 10,000
+   production requests (en, ar) exactly, prompt, schema and `custom_id` included.
+3. `submit` and `collect` run the OpenAI Batch API (`pip install openai`,
+   `OPENAI_API_KEY`). These two steps were not exercised against the live API.
+4. `assemble-labeled` matches outputs to texts by `custom_id` and writes
+   `{en,ar}_labeled.csv`. Run on the production batch outputs it reproduces the
+   production labeled CSVs, with two documented differences: label values are
+   written `0`/`1` (production: `0.0`/`1.0`), and 8 English responses whose
+   message has an empty first text part are parsed (production left them blank).
+   Production also left 177 en and 45 ar texts unlabeled because their batch
+   outputs never arrived; `assemble-labeled` fails on missing labels unless you
+   pass `--allow-missing`.
+5. `python datasets/toxicity/prepare_toxicity_splits.py --input-dir work/labeled --output-dir <out>`
+6. `python datasets/toxicity/verify_split.py --splits-dir <out> --ignore-order`
+
+A fresh gpt-4.1-mini run can label some texts differently, which changes the
+filtered pool and therefore the splits; expect `verify_split.py` to report
+mismatches. Use the exact rebuild above to reproduce the paper.
 
 ## License
 

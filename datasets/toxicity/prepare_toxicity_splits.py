@@ -21,7 +21,9 @@ Provenance: production run was
       --geometry_per_cell 50 --vectors_per_cell 32 --evaluation_per_cell 25 --seed 42
 
 After generating, verify against the shipped manifest:
-  python scripts/toxicity/verify_split.py --splits-dir <output_dir> --manifest datasets/toxicity/manifest.json
+  python datasets/toxicity/verify_split.py --splits-dir <output_dir> --manifest datasets/toxicity/manifest.json
+(Labels from a fresh gpt-4.1-mini run can differ from the production ones; for an exact
+rebuild from the original texts use datasets/toxicity/rebuild_from_manifest.py instead.)
 """
 from __future__ import annotations
 

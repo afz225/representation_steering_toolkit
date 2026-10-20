@@ -3,10 +3,12 @@
 #
 # Plain POSIX bash; no scheduler directives. The candidate texts are NOT
 # shipped (third-party social-media posts; see datasets/toxicity/DATASET.md),
-# so this script starts by rebuilding the split from a user-supplied
-# TOXICITY_DATA_DIR (the directory containing {en,ar}_labeled.csv produced by
-# the documented textdetox download + gpt-4.1-mini annotation pipeline) and
-# verifying it against the shipped fingerprints in datasets/toxicity/manifest.json.
+# so this script starts by rebuilding the split and verifying it against the
+# shipped fingerprints in datasets/toxicity/manifest.json. By default it rebuilds
+# the exact paper split from the public textdetox texts (downloaded from the
+# Hugging Face Hub, or read from TOXICITY_SOURCE_DIR/{en,ar}.{parquet,csv,jsonl});
+# set TOXICITY_DATA_DIR to a directory of re-annotated {en,ar}_labeled.csv
+# instead to split your own labels (not exact; see DATASET.md).
 #
 # Usage:
 #   bash scripts/replication/toxicity_full.sh                 # full pipeline
@@ -16,7 +18,7 @@
 #                                                             # config validation
 # Env overrides: MODEL_ID, JUDGE_MODEL_ID, ROOT, DATA_DIR (defaults
 # results/replication/toxicity/splits), OUT (defaults results/replication/toxicity),
-# LABELS (default $DATA_DIR's sources; see below).
+# TOXICITY_SOURCE_DIR, TOXICITY_DATA_DIR (see above).
 set -eu
 
 ROOT="${ROOT:-$(cd "$(dirname "$0")/../.." && pwd)}"
@@ -31,7 +33,7 @@ VALIDATE_ONLY=0
 for arg in "$@"; do
   case "$arg" in
     --validate-only) VALIDATE_ONLY=1 ;;
-    --help|-h) sed -n '2,17p' "$0"; exit 0 ;;
+    --help|-h) sed -n '2,19p' "$0"; exit 0 ;;
     *) echo "unknown argument: $arg" >&2; exit 2 ;;
   esac
 done
@@ -50,32 +52,33 @@ else
 fi
 repsteer_cli() { "${REPSSTEER[@]}" "$@"; }
 
-# ---- Stage 0: rebuild the annotated splits from user-supplied labeled CSVs ----
-if [ -z "${TOXICITY_DATA_DIR:-}" ] || [ ! -d "$TOXICITY_DATA_DIR" ]; then
-  cat >&2 <<'EOF'
-ERROR: TOXICITY_DATA_DIR is not set (or not a directory). This must point at a
-directory containing {en,ar}_labeled.csv produced by the documented pipeline:
-  1. download textdetox/multilingual_toxicity_dataset (en, ar) from Hugging Face
-  2. re-annotate with gpt-4.1-mini using the exact developer prompt and schema
-     in datasets/toxicity/DATASET.md (runner: scripts/toxicity/batch_label_toxicity.py)
-  3. assemble the per-language labeled CSVs (columns text, toxic,
-     mentions_gender, mentions_location, ...)
-
-See datasets/toxicity/DATASET.md ("Rebuilding the data locally") for details.
-EOF
-  exit 2
+# ---- Stage 0: rebuild the annotated splits ----
+if [ -n "${TOXICITY_DATA_DIR:-}" ]; then
+  if [ ! -d "$TOXICITY_DATA_DIR" ]; then
+    echo "ERROR: TOXICITY_DATA_DIR=$TOXICITY_DATA_DIR is not a directory" >&2
+    exit 2
+  fi
+  echo "==> prepare_toxicity_splits.py from re-annotated labels -> ${SPLITS_DIR}"
+  python3 datasets/toxicity/prepare_toxicity_splits.py \
+    --input-dir "$TOXICITY_DATA_DIR" \
+    --output-dir "$SPLITS_DIR" \
+    --geometry-per-cell 50 --vectors-per-cell 32 --evaluation-per-cell 25 --seed 42
+  VERIFY_ARGS=(--ignore-order)
+else
+  if [ -n "${TOXICITY_SOURCE_DIR:-}" ]; then
+    SOURCE_ARGS=(--source-dir "$TOXICITY_SOURCE_DIR")
+  else
+    SOURCE_ARGS=(--from-hub)
+  fi
+  echo "==> rebuild_from_manifest.py (exact paper split) -> ${SPLITS_DIR}"
+  python3 datasets/toxicity/rebuild_from_manifest.py "${SOURCE_ARGS[@]}" --output-dir "$SPLITS_DIR"
+  VERIFY_ARGS=()
 fi
-
-echo "==> prepare_toxicity_splits.py -> ${SPLITS_DIR}"
-python3 datasets/toxicity/prepare_toxicity_splits.py \
-  --input-dir "$TOXICITY_DATA_DIR" \
-  --output-dir "$SPLITS_DIR" \
-  --geometry-per-cell 50 --vectors-per-cell 32 --evaluation-per-cell 25 --seed 42
 
 echo "==> verify_split.py (fingerprints vs datasets/toxicity/manifest.json)"
 python3 datasets/toxicity/verify_split.py \
   --splits-dir "$SPLITS_DIR" \
-  --manifest datasets/toxicity/manifest.json
+  --manifest datasets/toxicity/manifest.json "${VERIFY_ARGS[@]+"${VERIFY_ARGS[@]}"}"
 
 # ---- Config validation (CPU-only; also runs in --validate-only mode) ----
 for setup in general conditioned; do

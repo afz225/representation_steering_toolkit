@@ -13,6 +13,8 @@ Checks, per candidate_id in the manifest:
   - the (language, toxicity_bin, gender_bin) cell matches the manifest cell
   - split membership matches the manifest split
   - per-split and per-cell sizes match, and there are no extra ids
+  - the row position within its split matches the manifest `row` (manifest
+    version >= 2; skip with --ignore-order, e.g. after re-annotating)
 No candidate texts are read from the manifest; only fingerprints.
 """
 from __future__ import annotations
@@ -32,7 +34,7 @@ def sha256_text(text: str) -> str:
     return hashlib.sha256(text.strip().encode("utf-8")).hexdigest()
 
 
-def verify_splits(splits_dir, manifest_path=None) -> int:
+def verify_splits(splits_dir, manifest_path=None, check_order=True) -> int:
     """Programmatic entrypoint; returns 0 when the split matches, else 1."""
     if manifest_path is None:
         manifest_path = Path(__file__).resolve().parent / "manifest.json"
@@ -49,13 +51,14 @@ def verify_splits(splits_dir, manifest_path=None) -> int:
             print(f"FAIL: missing {path}")
             return 1
         with path.open(newline="", encoding="utf-8") as handle:
-            for row in csv.DictReader(handle):
+            for position, row in enumerate(csv.DictReader(handle)):
                 row_count += 1
                 cid = row["candidate_id"]
                 entry = {
                     "split": split_name,
                     "text_sha256": sha256_text(row["text"]),
                     "cell": [row["language"], row["toxicity_bin"], row["gender_bin"]],
+                    "row": position,
                 }
                 if cid in observed:
                     print(f"FAIL: duplicate candidate_id {cid} across split CSVs")
@@ -74,6 +77,8 @@ def verify_splits(splits_dir, manifest_path=None) -> int:
             failures.append(f"{cid}: cell {got['cell']} != manifest {want['cell']}")
         elif got["split"] != want["split"]:
             failures.append(f"{cid}: in {got['split']}, manifest says {want['split']}")
+        elif check_order and "row" in want and got["row"] != want["row"]:
+            failures.append(f"{cid}: at row {got['row']} of {got['split']}, manifest says row {want['row']}")
     for cid in sorted(observed):
         failures.append(f"{cid}: extra candidate not in manifest (split {observed[cid]['split']})")
 
@@ -99,8 +104,10 @@ def main() -> int:
         help="Directory with geometry_400.csv, vector_construction_256.csv, evaluation_200.csv",
     )
     ap.add_argument("--manifest", default=None, help="manifest.json path (default: next to this script)")
+    ap.add_argument("--ignore-order", action="store_true",
+                    help="skip the row-order check (rows from a re-annotated corpus may be ordered differently)")
     args = ap.parse_args()
-    return verify_splits(args.splits_dir, args.manifest)
+    return verify_splits(args.splits_dir, args.manifest, check_order=not args.ignore_order)
 
 
 if __name__ == "__main__":

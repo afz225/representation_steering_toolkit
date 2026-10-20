@@ -5,7 +5,7 @@
 # Plain POSIX bash; no scheduler directives. Chains:
 #   catdog_full.sh          (validate, split, build-vectors, steer, merge-steered,
 #                            judge, aggregate, geometry + matched audit)
-#   toxicity_full.sh        (split rebuild + verify from TOXICITY_DATA_DIR, then
+#   toxicity_full.sh        (exact split rebuild + verify from the manifest, then
 #                            build-vectors, steer, judge, geometry, aggregate)
 #   geometry_and_correlations.sh  (aggregation + full/partial correlations with
 #                            production stars; reuses the geometry computed above)
@@ -18,10 +18,10 @@
 #                                                        # split-verification
 #
 # Environment:
-#   TOXICITY_DATA_DIR  required for the toxicity section (see toxicity_full.sh
-#                      and datasets/toxicity/DATASET.md). In --validate-only
-#                      mode it is still required so the split can be rebuilt
-#                      and verified.
+#   TOXICITY_SOURCE_DIR  optional local {en,ar}.{parquet,csv,jsonl} textdetox texts;
+#                      by default the toxicity split is rebuilt exactly from the
+#                      Hugging Face Hub (see toxicity_full.sh, datasets/toxicity/DATASET.md).
+#   TOXICITY_DATA_DIR  optional: split your own re-annotated {en,ar}_labeled.csv instead.
 #   ROOT, MODEL_ID, JUDGE_MODEL_ID, DATASET, OUT, CATDOG_OUT, TOX_OUT,
 #   SPLITS_DIR   forwarded to the stage scripts (see each script's header).
 set -eu

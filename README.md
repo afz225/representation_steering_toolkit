@@ -76,10 +76,10 @@ produced it in [configs/replication/README.md](configs/replication/README.md).
 ```bash
 # CPU-only checks of data, splits, and configs (no model downloads)
 bash scripts/replication/catdog_full.sh --validate-only
-TOXICITY_DATA_DIR=/path/to/labeled bash scripts/replication/toxicity_full.sh --validate-only
+bash scripts/replication/toxicity_full.sh --validate-only   # rebuilds the exact toxicity split from the Hub
 
 # Full replication (GPU; runs every stage through the repsteer CLI)
-TOXICITY_DATA_DIR=/path/to/labeled bash scripts/replication/run_all.sh
+bash scripts/replication/run_all.sh
 ```
 
 The scripts are plain bash with no scheduler directives; each stage is
