@@ -25,6 +25,7 @@
   --cds-chart-status-critical: #e34948; --cds-surface-popover: #ffffff; --cds-border: #d9d8d2;
   --cds-shadow-popover: 0 4px 16px rgba(20, 20, 30, .12); --cds-text-secondary: #5b5d63;
   --series-1: #2a78d6; --series-2: #eb6834; --skeleton: #ebeae5;
+  --ramp-1: #86b6ef; --ramp-2: #5598e7; --ramp-3: #256abf; --ramp-4: #0d366b;
 }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
   --color-bg: #161718; --color-panel: #1e1f21; --color-fg: #eeeeea; --color-fg-muted: #a9aaa4;
@@ -32,14 +33,16 @@
   --cds-chart-grid: #2c2d2b; --cds-chart-axis: #77786f; --cds-chart-reference: #5c5d57;
   --cds-chart-status-critical: #e66767; --cds-surface-popover: #26272a; --cds-border: #3a3b38;
   --cds-shadow-popover: 0 4px 16px rgba(0, 0, 0, .5); --cds-text-secondary: #a9aaa4;
-  --series-1: #3987e5; --series-2: #d95926; --skeleton: #2c2d2b; color-scheme: dark; } }
+  --series-1: #3987e5; --series-2: #d95926; --skeleton: #2c2d2b; color-scheme: dark;
+  --ramp-1: #184f95; --ramp-2: #2a78d6; --ramp-3: #5598e7; --ramp-4: #9ec5f4; } }
 :root[data-theme="dark"] {
   --color-bg: #161718; --color-panel: #1e1f21; --color-fg: #eeeeea; --color-fg-muted: #a9aaa4;
   --color-border-line: #333430; --color-ok: #5cc98a; --color-warn: #f0b552; --color-bad: #f07a7a;
   --cds-chart-grid: #2c2d2b; --cds-chart-axis: #77786f; --cds-chart-reference: #5c5d57;
   --cds-chart-status-critical: #e66767; --cds-surface-popover: #26272a; --cds-border: #3a3b38;
   --cds-shadow-popover: 0 4px 16px rgba(0, 0, 0, .5); --cds-text-secondary: #a9aaa4;
-  --series-1: #3987e5; --series-2: #d95926; --skeleton: #2c2d2b; color-scheme: dark; }
+  --series-1: #3987e5; --series-2: #d95926; --skeleton: #2c2d2b; color-scheme: dark;
+  --ramp-1: #184f95; --ramp-2: #2a78d6; --ramp-3: #5598e7; --ramp-4: #9ec5f4; }
 html { background: var(--color-bg); }
 body { margin: 0; background: var(--color-bg); color: var(--color-fg); font-family: var(--font-anthropic-sans); -webkit-font-smoothing: antialiased; }
 #dash-root { padding-block: 40px 56px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
@@ -323,6 +326,57 @@ code { font-size: .92em; }
     </div>
   </section>
 
+  <section class="ss-sec" id="vecsize">
+    <h2>Side study: larger vector construction sets</h2>
+    <p>
+      Before the sweep we checked whether the steering vectors were built from enough text. On Gemma-4-31B cat/dog, general
+      difference-of-means vectors were built from 32, 64, 128 (the sweep's choice) and 216 texts per class, balanced over the four
+      style × language cells, with three seeded draws per size. 216 is the most a balanced, evaluation-disjoint set allows. Every variant
+      was steered on the sweep's evaluation prompts at the same depths and α levels (0.25–2), with norms calibrated identically so only the
+      direction differs.
+    </p>
+    <p>
+      With the sweep's <b data-source="vecsize" data-field="size" data-where="is_sweep=True" class="dash-skeleton">—</b> texts per class, grid-mean
+      success differs from the <b data-source="vecsize" data-field="size" data-where="size=216" class="dash-skeleton">—</b>-per-class result by only
+      <b data-source="vecsize" data-field="delta_vs_max" data-where="is_sweep=True" class="dash-skeleton">—</b> percentage points (small, though its
+      interval excludes zero). The broken rate stays flat, and the layer profile the geometry analysis relies on is preserved
+      (r = <b data-source="vecsize" data-field="profile_r_success" data-where="is_sweep=True" class="dash-skeleton">—</b> for success). The sweep's
+      set size was large enough, so no rerun was needed. The direction is still sharpening at the largest size, so returns are diminishing, not exhausted.
+    </p>
+    <div class="ss-grid">
+      <div class="ss-card" id="card-vec-delta">
+        <h3>Success relative to the largest set</h3>
+        <p class="ss-note">Paired difference in grid-mean success vs 216 texts per class over the same prompts, with 95% CI.</p>
+        <div class="ss-chart dash-skeleton" id="chart-vec-delta" data-source="vecsize"></div>
+      </div>
+      <div class="ss-card" id="card-vec-layers">
+        <h3>Success by layer for each set size</h3>
+        <p class="ss-note">Mean over draws and α. Small sets give noisier layer profiles; 128 and 216 track each other.</p>
+        <div class="ss-legend" id="legend-vec" aria-hidden="true"></div>
+        <div class="ss-chart dash-skeleton" id="chart-vec-layers" data-source="vecsize_layers"></div>
+      </div>
+    </div>
+    <div class="ss-card" id="card-vec-table">
+      <h3>Set size summary</h3>
+      <p class="ss-note">Profile r: correlation of the 12-layer outcome profile with the 216-per-class profile. Draw cosine: mean cosine between draws' vectors across layers (216-per-class draws share most of their texts, which inflates theirs).</p>
+      <div class="ss-tablewrap">
+        <table class="ss-table" id="table-vecsize" data-source="vecsize" data-row-key="size">
+          <thead><tr>
+            <th data-field="size">Texts per class</th>
+            <th data-field="draws">Draws</th>
+            <th data-field="success">Success</th>
+            <th data-field="delta_vs_max">Δ vs 216 (pp)</th>
+            <th data-field="broken">Broken</th>
+            <th data-field="profile_r_success">Profile r, success</th>
+            <th data-field="profile_r_broken">Profile r, broken</th>
+            <th data-field="cos_between_draws">Draw cosine</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
   <section class="ss-sec" id="method">
     <h2>Method and deviations</h2>
     <ul class="ss-list">
@@ -335,7 +389,7 @@ code { font-size: .92em; }
   </section>
 </div>
 <footer class="ss-foot">
-  <span>Data behind every chart and table: <a href="data/study_facts.csv">study_facts.csv</a> · <a href="data/profiles.csv">profiles.csv</a> · <a href="data/results.csv">results.csv</a> · <a href="data/models.csv">models.csv</a> · <a href="data/concepts.csv">concepts.csv</a> · <a href="data/crossjudge.csv">crossjudge.csv</a> · <a href="data/h4.csv">h4.csv</a></span>
+  <span>Data behind every chart and table: <a href="data/study_facts.csv">study_facts.csv</a> · <a href="data/profiles.csv">profiles.csv</a> · <a href="data/results.csv">results.csv</a> · <a href="data/models.csv">models.csv</a> · <a href="data/concepts.csv">concepts.csv</a> · <a href="data/crossjudge.csv">crossjudge.csv</a> · <a href="data/h4.csv">h4.csv</a> · <a href="data/vecsize.csv">vecsize.csv</a> · <a href="data/vecsize_layers.csv">vecsize_layers.csv</a></span>
   <span>Aggregated results only; no model generations or prompts are published here.</span>
 </footer>
 </div>
@@ -343,7 +397,7 @@ code { font-size: .92em; }
 <script>
 /* Minimal stand-in for the dashboard runtime: loads the CSVs beside this page. */
 (() => {
-  const ids = ['study_facts', 'profiles', 'results', 'models', 'concepts', 'crossjudge', 'h4'];
+  const ids = ['study_facts', 'profiles', 'results', 'models', 'concepts', 'crossjudge', 'h4', 'vecsize', 'vecsize_layers'];
   const store = {}, calcs = {}, listeners = [];
   const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
   ids.forEach((id) => { store[id] = { status: 'loading', data: [], columns: [] }; });
@@ -377,7 +431,7 @@ code { font-size: .92em; }
   const num = (v) => (v === '' || v == null ? NaN : Number(v));
   const f2 = d3.format('.2f'), f3 = d3.format('.3f'), pct = d3.format('.0%'), sgn2 = d3.format('+.2f'), sgn3 = d3.format('+.3f'), int = d3.format(',');
   const fp = (v) => (Number.isNaN(v) ? '—' : v < 0.001 ? '<0.001' : f3(v));
-  const ID = ['study_facts', 'profiles', 'results', 'models', 'concepts', 'crossjudge', 'h4'];
+  const ID = ['study_facts', 'profiles', 'results', 'models', 'concepts', 'crossjudge', 'h4', 'vecsize', 'vecsize_layers'];
 
   dash.calc('verdict_summary', {
     inputs: ['results'],
@@ -396,6 +450,7 @@ code { font-size: .92em; }
     verdict_summary: { yes: int, tests: int, fixed_sig: int },
     crossjudge: { kappa_success: f2 },
     h4: { partial_r_ccgp_broken: sgn2 },
+    vecsize: { size: int, delta_vs_max: (v) => d3.format('+.1f')(v * 100), profile_r_success: f2 },
   };
 
   function fillMarks() {
@@ -607,6 +662,95 @@ code { font-size: .92em; }
       [...mod.data].sort((a, b) => num(b.success) - num(a.success)), ['model'], [
       ['model', null, 'ss-txt'], ['family', null], ['params_b', (v) => d3.format('.1f')(v)], ['success', pct], ['broken', pct],
       ['ccgp_r_success', sgn2], ['ccgp_r_broken', sgn2]]);
+    const vs = dash.data('vecsize');
+    const vsEl = document.getElementById('chart-vec-delta');
+    if (!failed(vsEl, 'vecsize')) {
+      deltaChart(vsEl, vs.data.map((r) => ({ size: num(r.size), sweep: r.is_sweep === 'True', d: num(r.delta_vs_max),
+        lo: num(r.delta_ci_low), hi: num(r.delta_ci_high) })).sort((a, b) => a.size - b.size));
+    }
+    const vl = dash.data('vecsize_layers');
+    const vlEl = document.getElementById('chart-vec-layers');
+    if (!failed(vlEl, 'vecsize_layers')) {
+      const rows = vl.data.map((r) => ({ size: num(r.size), layer: num(r.layer), success: num(r.success) }));
+      multiLine(vlEl, [...new Set(rows.map((r) => r.size))].sort((a, b) => a - b), rows);
+    }
+    if (vs.status === 'ok') table(document.getElementById('table-vecsize'), 'vecsize',
+      [...vs.data].sort((a, b) => num(a.size) - num(b.size)), ['size'], [
+      ['size', null, 'ss-txt'], ['draws', int], ['success', (v) => d3.format('.1%')(v)], ['delta_vs_max', (v) => d3.format('+.1f')(v * 100)],
+      ['broken', pct], ['profile_r_success', f2], ['profile_r_broken', f3], ['cos_between_draws', f2]]);
+  }
+
+  const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  const ramp = () => [1, 2, 3, 4].map((i) => css(`--ramp-${i}`));
+
+  function deltaChart(el, rows) {
+    el.replaceChildren();
+    const W = Math.max(280, el.clientWidth), rowH = 40, H = rows.length * rowH + 44;
+    const svg = d3.select(el).append('svg').attr('width', '100%').attr('viewBox', `0 0 ${W} ${H}`);
+    const labels = rows.map((r) => `${r.size} per class${r.sweep ? ' (sweep)' : ''}`);
+    const lw = textWidth(svg, labels, 'ss-lab') + 12;
+    const pp = (v) => d3.format('+.1f')(v * 100);
+    const lo = Math.min(-0.02, d3.min(rows, (r) => r.lo) * 1.15);
+    const x = d3.scaleLinear([lo, 0.005], [lw, W - 16]).nice();
+    const ticks = x.ticks(Math.max(3, Math.floor((W - lw) / 70)));
+    svg.append('g').selectAll('line').data(ticks).join('line').attr('x1', x).attr('x2', x).attr('y1', 8).attr('y2', H - 30)
+      .attr('stroke', (d) => (d === 0 ? 'var(--cds-chart-axis)' : 'var(--cds-chart-grid)'));
+    svg.append('g').selectAll('text').data(ticks).join('text').attr('x', x).attr('y', H - 14).attr('text-anchor', 'middle').text((d) => `${pp(d)} pp`);
+    const tip = tooltip(el), colors = ramp();
+    rows.forEach((r, i) => {
+      const cy = 8 + i * rowH + rowH / 2, color = colors[i];
+      svg.append('text').attr('class', 'ss-lab').attr('x', lw - 12).attr('y', cy + 4).attr('text-anchor', 'end').text(labels[i]);
+      if (r.size === 216) {
+        svg.append('text').attr('x', x(0) - 6).attr('y', cy + 4).attr('text-anchor', 'end').text('reference');
+        return;
+      }
+      svg.append('line').attr('x1', x(r.lo)).attr('x2', x(r.hi)).attr('y1', cy).attr('y2', cy).attr('stroke', color).attr('stroke-width', 2).attr('stroke-linecap', 'round');
+      svg.append('circle').attr('cx', x(r.d)).attr('cy', cy).attr('r', 5).attr('fill', color);
+      svg.append('rect').attr('x', lw).attr('y', cy - rowH / 2).attr('width', W - lw).attr('height', rowH).attr('fill', 'transparent')
+        .on('pointermove', () => tip.show(x(r.d) / W * el.clientWidth, cy / H * el.clientHeight, labels[i],
+          [[color, 'Δ success vs 216', `${pp(r.d)} pp`], [null, '95% CI', `${pp(r.lo)} to ${pp(r.hi)} pp`]]))
+        .on('pointerleave', () => tip.hide());
+    });
+  }
+
+  function multiLine(el, sizes, rows) {
+    el.replaceChildren();
+    const W = Math.max(280, el.clientWidth), H = 260;
+    const svg = d3.select(el).append('svg').attr('width', '100%').attr('viewBox', `0 0 ${W} ${H}`);
+    const ymax = Math.max(0.2, d3.max(rows, (r) => r.success) * 1.1);
+    const y = d3.scaleLinear([0, ymax], [H - 44, 12]).nice();
+    const yTicks = y.ticks(4);
+    const m = { l: textWidth(svg, yTicks.map(pct)) + 10, r: 16 };
+    const layers = [...new Set(rows.map((r) => r.layer))].sort((a, b) => a - b);
+    const x = d3.scalePoint(layers, [m.l, W - m.r]).padding(0.3);
+    svg.append('g').selectAll('line').data(yTicks).join('line').attr('x1', m.l).attr('x2', W - m.r).attr('y1', y).attr('y2', y).attr('stroke', 'var(--cds-chart-grid)');
+    svg.append('g').selectAll('text').data(yTicks).join('text').attr('x', m.l - 6).attr('y', (d) => y(d) + 4).attr('text-anchor', 'end').text(pct);
+    const step = Math.ceil(layers.length / Math.max(1, Math.floor((W - m.l - m.r) / 36)));
+    svg.append('g').selectAll('text').data(layers.filter((_, i) => i % step === 0)).join('text')
+      .attr('x', x).attr('y', H - 26).attr('text-anchor', 'middle').text((d) => d);
+    svg.append('text').attr('x', (m.l + W - m.r) / 2).attr('y', H - 6).attr('text-anchor', 'middle').text('Layer (Gemma-4-31B)');
+    const colors = ramp();
+    sizes.forEach((s, i) => {
+      const pts = rows.filter((r) => r.size === s).sort((a, b) => a.layer - b.layer);
+      svg.append('path').datum(pts).attr('fill', 'none').attr('stroke', colors[i]).attr('stroke-width', 2)
+        .attr('stroke-linecap', 'round').attr('stroke-linejoin', 'round').attr('d', d3.line((d) => x(d.layer), (d) => y(d.success)));
+    });
+    const tip = tooltip(el), hover = svg.append('line').attr('stroke', 'var(--cds-chart-reference)').attr('y1', 12).attr('y2', H - 44).attr('opacity', 0);
+    svg.append('rect').attr('x', m.l).attr('y', 12).attr('width', W - m.l - m.r).attr('height', H - 56).attr('fill', 'transparent')
+      .on('pointermove', (ev) => {
+        const [px] = d3.pointer(ev);
+        const L = layers.reduce((a, b) => (Math.abs(x(b) - px) < Math.abs(x(a) - px) ? b : a));
+        hover.attr('x1', x(L)).attr('x2', x(L)).attr('opacity', 1);
+        const at = sizes.map((s, i) => [colors[i], `${s} per class`, pct(rows.find((r) => r.size === s && r.layer === L)?.success ?? NaN)]);
+        tip.show(x(L) / W * el.clientWidth, 20, `Layer ${L}`, at);
+      })
+      .on('pointerleave', () => { hover.attr('opacity', 0); tip.hide(); });
+    const legend = document.getElementById('legend-vec');
+    legend.replaceChildren();
+    sizes.forEach((s, i) => {
+      const span = document.createElement('span'), sw = document.createElement('i');
+      sw.style.background = colors[i]; span.append(sw, document.createTextNode(`${s} per class`)); legend.append(span);
+    });
   }
 
   function bindToggle(groupId, attr, stateKey) {

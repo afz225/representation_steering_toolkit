@@ -1,0 +1,5 @@
+size,success,success_sd,draws,broken,delta_vs_max,delta_ci_low,delta_ci_high,n_prompts,profile_r_success,profile_r_broken,cos_between_draws,is_sweep
+32,0.099,0.0043,3,0.6452,-0.0116,-0.0168,-0.0062,128,0.7281,0.9726,0.4533,False
+64,0.0985,0.0052,3,0.6606,-0.012,-0.0163,-0.008,128,0.9207,0.9893,0.5757,False
+128,0.1059,0.005,4,0.6602,-0.0046,-0.0081,-0.0011,128,0.9419,0.9946,0.7368,True
+216,0.1105,0.0095,3,0.654,0.0,0.0,0.0,128,1.0,1.0,0.8816,False
