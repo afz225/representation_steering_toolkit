@@ -308,8 +308,7 @@ code { font-size: .92em; }
     <h2>The relationship changes sign across models and concepts</h2>
     <p>
       Mean within-cell partial r of CCGP with the outcome, over each model's or concept's included cells. Even within one family the sign
-      can flip. Size, mixture-of-experts and concept abstractness moderate nothing; family moderates only the shattering measures' link to
-      broken outputs.
+      can flip. Which model characteristics matter is broken down in the next section.
     </p>
     <div class="ss-toggle" role="group" aria-label="Outcome" id="outcome-toggle">
       <button type="button" id="out-success" data-outcome="success" aria-pressed="true">Success</button>
@@ -325,6 +324,58 @@ code { font-size: .92em; }
         <h3>CCGP partial r by concept</h3>
         <p class="ss-note">Catdog language has almost no usable cells: its decodability is near ceiling, so CCGP and decodability move together.</p>
         <div class="ss-chart ss-tall dash-skeleton" id="chart-by-concept" data-source="concepts"></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="ss-sec" id="moderators">
+    <h2>Does it depend on the model?</h2>
+    <p>
+      The pre-registered moderator tests ask whether a metric's within-cell effect differs by model family, size (log parameters),
+      mixture-of-experts or concept abstractness (likelihood-ratio test on the interaction, Holm-corrected over the eight tests).
+      Two patterns appear. <b>Family</b> changes how the shattering measures relate to broken output (SD and SD mean acc, Holm p &lt; .02,
+      also with the original judge): in Granite more shattering goes with more broken output, elsewhere it does not. <b>Mixture-of-experts</b>
+      just passes correction for PS → success (Holm p = .044; .056 with the original judge): parallelism, and to a lesser degree CCGP, track success
+      in the two MoE models (Qwen3.5-122B-A10B, gpt-oss-120b) but not in the dense ones. Those two are also the two largest models, so MoE and
+      scale cannot be separated, and within families the trend with size is not monotonic; among the 11 dense models the size trend is not
+      significant. Treat it as a lead resting on two models. Size alone and concept abstractness moderate nothing after correction.
+    </p>
+    <div class="ss-grid">
+      <div class="ss-card" id="card-moderators">
+        <h3>Moderator tests, Holm-corrected p</h3>
+        <p class="ss-note">Each cell tests whether the metric's effect differs across that moderator. Bold: below .05. α grid follows the toggle above.</p>
+        <div class="ss-tablewrap">
+          <table class="ss-table" id="table-moderators" data-source="moderators" data-row-key="grid,test">
+            <thead><tr>
+              <th data-field="test">Test</th>
+              <th data-field="family">Family</th>
+              <th data-field="log10_size">Size</th>
+              <th data-field="moe">MoE</th>
+              <th data-field="abstractness">Abstractness</th>
+            </tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="ss-card" id="card-families">
+        <h3>Mean within-cell partial r by family and architecture</h3>
+        <p class="ss-note">Primary grid, mean over included cells, controlling decodability and depth. Rows: families, then dense vs MoE.</p>
+        <div class="ss-tablewrap">
+          <table class="ss-table" id="table-families" data-source="families" data-row-key="kind,level">
+            <thead><tr>
+              <th data-field="level">Group</th>
+              <th data-field="success|CCGP">CCGP, success</th>
+              <th data-field="success|PS">PS, success</th>
+              <th data-field="success|SD">SD, success</th>
+              <th data-field="success|SD mean acc">SD acc, success</th>
+              <th data-field="broken|CCGP">CCGP, broken</th>
+              <th data-field="broken|PS">PS, broken</th>
+              <th data-field="broken|SD">SD, broken</th>
+              <th data-field="broken|SD mean acc">SD acc, broken</th>
+            </tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
       </div>
     </div>
   </section>
@@ -476,7 +527,7 @@ code { font-size: .92em; }
   </section>
 </div>
 <footer class="ss-foot">
-  <span>Data behind every chart and table: <a href="data/study_facts.csv">study_facts.csv</a> · <a href="data/profiles.csv">profiles.csv</a> · <a href="data/results.csv">results.csv</a> · <a href="data/models.csv">models.csv</a> · <a href="data/concepts.csv">concepts.csv</a> · <a href="data/crossjudge.csv">crossjudge.csv</a> · <a href="data/h4.csv">h4.csv</a> · <a href="data/ccgp_residual.csv">ccgp_residual.csv</a> · <a href="data/vecsize.csv">vecsize.csv</a> · <a href="data/vecsize_layers.csv">vecsize_layers.csv</a></span>
+  <span>Data behind every chart and table: <a href="data/study_facts.csv">study_facts.csv</a> · <a href="data/profiles.csv">profiles.csv</a> · <a href="data/results.csv">results.csv</a> · <a href="data/models.csv">models.csv</a> · <a href="data/concepts.csv">concepts.csv</a> · <a href="data/crossjudge.csv">crossjudge.csv</a> · <a href="data/h4.csv">h4.csv</a> · <a href="data/ccgp_residual.csv">ccgp_residual.csv</a> · <a href="data/moderators.csv">moderators.csv</a> · <a href="data/families.csv">families.csv</a> · <a href="data/vecsize.csv">vecsize.csv</a> · <a href="data/vecsize_layers.csv">vecsize_layers.csv</a></span>
   <span>Aggregated results only; no model generations or prompts are published here.</span>
 </footer>
 </div>
@@ -484,7 +535,7 @@ code { font-size: .92em; }
 <script>
 /* Minimal stand-in for the dashboard runtime: loads the CSVs beside this page. */
 (() => {
-  const ids = ['study_facts', 'profiles', 'results', 'results_v1', 'models', 'concepts', 'categories', 'crossjudge', 'h4', 'ccgp_residual', 'vecsize', 'vecsize_layers', 'sources'];
+  const ids = ['study_facts', 'profiles', 'results', 'results_v1', 'models', 'concepts', 'categories', 'crossjudge', 'h4', 'ccgp_residual', 'moderators', 'families', 'vecsize', 'vecsize_layers', 'sources'];
   const store = {}, calcs = {}, listeners = [];
   const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
   ids.forEach((id) => { store[id] = { status: 'loading', data: [], columns: [] }; });
@@ -518,7 +569,7 @@ code { font-size: .92em; }
   const num = (v) => (v === '' || v == null ? NaN : Number(v));
   const f2 = d3.format('.2f'), f3 = d3.format('.3f'), pct = d3.format('.0%'), sgn2 = d3.format('+.2f'), sgn3 = d3.format('+.3f'), int = d3.format(',');
   const fp = (v) => (Number.isNaN(v) ? '—' : v < 0.001 ? '<0.001' : f3(v));
-  const ID = ['study_facts', 'profiles', 'results', 'results_v1', 'models', 'concepts', 'categories', 'crossjudge', 'h4', 'ccgp_residual', 'vecsize', 'vecsize_layers', 'sources'];
+  const ID = ['study_facts', 'profiles', 'results', 'results_v1', 'models', 'concepts', 'categories', 'crossjudge', 'h4', 'ccgp_residual', 'moderators', 'families', 'vecsize', 'vecsize_layers', 'sources'];
 
   dash.calc('verdict_summary', {
     inputs: ['results'],
@@ -744,6 +795,18 @@ code { font-size: .92em; }
       rs.data.filter((r) => r.grid === state.grid), ['grid', 'outcome', 'controls'], [
       ['outcome', null, 'ss-txt'], ['controls_label', null, 'ss-txt'], ['partial_r_pooled', sgn3], ['ci_low', sgn3], ['ci_high', sgn3],
       ['p', fp], ['k_cells', int]]);
+    const md = dash.data('moderators');
+    if (md.status === 'ok') {
+      const holm = (v) => (Number.isNaN(v) ? '—' : v < 0.001 ? '<0.001' : f3(v));
+      table(document.getElementById('table-moderators'), 'moderators', md.data.filter((r) => r.grid === state.grid), ['grid', 'test'], [
+        ['test', null, 'ss-txt'], ['family', holm], ['log10_size', holm], ['moe', holm], ['abstractness', holm]]);
+      document.querySelectorAll('#table-moderators tbody td').forEach((td) => { const v = Number(td.textContent.replace('<', ''));
+        if (!td.classList.contains('ss-txt') && v < 0.05) td.style.fontWeight = '700'; });
+    }
+    const fa = dash.data('families');
+    if (fa.status === 'ok') table(document.getElementById('table-families'), 'families', fa.data, ['kind', 'level'], [
+      ['level', null, 'ss-txt'], ...['success|CCGP', 'success|PS', 'success|SD', 'success|SD mean acc',
+        'broken|CCGP', 'broken|PS', 'broken|SD', 'broken|SD mean acc'].map((k) => [k, sgn2])]);
     const con = dash.data('concepts');
     if (con.status === 'ok') table(document.getElementById('table-concepts'), 'concepts',
       [...con.data].sort((a, b) => num(b.success) - num(a.success)), ['concept'], [

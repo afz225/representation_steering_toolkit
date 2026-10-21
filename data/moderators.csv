@@ -1,0 +1,17 @@
+grid,test,family,log10_size,moe,abstractness
+primary,CCGP → success,0.3591,0.2165,0.0774,1.0
+primary,PS → success,0.698,0.0543,0.0438,1.0
+primary,SD → success,0.3591,0.7758,0.1828,1.0
+primary,SD mean acc → success,0.132,1.0,0.1642,1.0
+primary,CCGP → broken,0.3591,1.0,0.2367,0.4808
+primary,PS → broken,0.698,1.0,0.2367,0.4988
+primary,SD → broken,0.0124,1.0,0.2367,1.0
+primary,SD mean acc → broken,0.0011,1.0,0.2367,1.0
+prereg,CCGP → success,0.4588,0.2737,0.13,1.0
+prereg,PS → success,0.6324,0.1582,0.109,1.0
+prereg,SD → success,0.1031,1.0,0.2477,1.0
+prereg,SD mean acc → success,0.0689,1.0,0.3047,1.0
+prereg,CCGP → broken,0.4588,1.0,0.3047,0.9342
+prereg,PS → broken,0.6055,1.0,0.3047,1.0
+prereg,SD → broken,0.0139,1.0,0.3047,1.0
+prereg,SD mean acc → broken,0.0037,1.0,0.3047,1.0
