@@ -59,6 +59,15 @@ code { font-size: .92em; }
 .ss-title { font-family: var(--font-anthropic-serif); font-weight: 400; font-size: var(--cds-font-size-title); line-height: 1.15; margin: 0; text-wrap: balance; }
 .ss-lede { font-size: var(--cds-font-size-body); line-height: 1.55; max-width: 68ch; margin: 0; color: var(--color-fg); }
 .ss-sub { font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); margin: 0; }
+.ss-banner { background: var(--color-panel); border: 1px solid var(--color-border-line); border-left: 3px solid var(--color-warn); border-radius: var(--cds-radius); padding: var(--cds-pad-md) var(--cds-pad-lg); font-size: var(--cds-font-size-body); line-height: 1.55; }
+.ss-gloss { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr)); gap: var(--cds-gap-md); }
+.ss-gloss-bin { background: var(--color-panel); border: 1px solid var(--color-border-line); border-radius: var(--cds-radius); padding: var(--cds-pad-lg); display: grid; gap: var(--cds-gap-sm); align-content: start; }
+.ss-gloss-bin.empty { background: transparent; border-style: dashed; }
+.ss-gloss-bin h3 { font-size: var(--cds-font-size-body); font-weight: var(--cds-font-weight-medium); margin: 0; }
+.ss-gloss-item { display: grid; gap: 2px; }
+.ss-gloss-item p { margin: 0; font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); line-height: 1.5; }
+.ss-gloss-item .ss-gloss-nuis { color: var(--color-fg); }
+.ss-gloss-item code { font-size: var(--cds-font-size-caption); }
 .ss-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr)); gap: var(--cds-gap-md); }
 .ss-tile { background: var(--color-panel); border: 1px solid var(--color-border-line); border-radius: var(--cds-radius); padding: var(--cds-pad-lg); display: grid; gap: var(--cds-gap-xs); align-content: start; }
 .ss-tile .ss-big { font-family: var(--font-anthropic-serif); font-weight: 400; font-size: var(--cds-font-size-title); font-variant-numeric: tabular-nums; line-height: 1.1; }
@@ -114,10 +123,19 @@ code { font-size: .92em; }
       measure has a dependable average effect on steering beyond decodability. The pre-registered rule says
       “predicts beyond decodability” for <b data-source="verdict_summary" data-field="yes" data-where="grid=primary" class="dash-skeleton">—</b>
       of <b data-source="verdict_summary" data-field="tests" data-where="grid=primary" class="dash-skeleton">—</b> tests, but that verdict
-      comes from effects that differ between models and concepts, in both directions.
+      comes from effects that differ between models and concepts, in both directions. Only one pooled estimate clears zero: a higher
+      parallelism score goes with slightly fewer broken outputs.
     </p>
-    <p class="ss-sub">Pre-registered analysis, run 2026-10-20. Judge: Qwen3.6-27B, with a GLM-4.5-Air re-judge of a 10% sample.</p>
+    <p class="ss-sub">Pre-registered analysis, run 2026-10-20; re-run on corrected judgements 2026-10-21. Judge: Qwen3.6-27B, with a GLM-4.5-Air re-judge of a 10% sample (original judgements, being redone).</p>
   </header>
+
+  <aside class="ss-banner" id="judge-fix">
+    <strong>Updated with corrected judgements.</strong> The original judge prompt counted “truncated” output as broken, but every
+    generation is capped at 35 new tokens (64 for the MWE concepts) and the judge was not told, so many outputs were marked broken
+    just for stopping at the cap. Every steered/baseline pair was re-judged with one added sentence stating the cap. Figures on this
+    page use the re-judged outcomes; the table below compares them with the original analysis. The vector-set-size side study and
+    any section marked “original judge” still use the first judgements.
+  </aside>
 
   <section class="ss-tiles" id="headline" aria-label="Headline figures">
     <div class="ss-tile">
@@ -130,7 +148,7 @@ code { font-size: .92em; }
     </div>
     <div class="ss-tile">
       <div class="ss-big ss-warn"><span data-source="crossjudge" data-field="kappa_success" data-where="level=all" class="dash-skeleton">—</span></div>
-      <div class="ss-label">κ between the two judges on success, below the pre-registered .6 bar (a limitation)</div>
+      <div class="ss-label">κ between the two judges on success (original judgements), below the pre-registered .6 bar (a limitation)</div>
     </div>
     <div class="ss-tile">
       <div class="ss-big ss-bad"><span data-source="h4" data-field="partial_r_ccgp_broken" data-where="grid=primary&amp;concept=cat_dog" class="dash-skeleton">—</span></div>
@@ -161,6 +179,42 @@ code { font-size: .92em; }
     </p>
   </section>
 
+  <section class="ss-sec" id="compare">
+    <h2>What the judge fix changed</h2>
+    <p>The same eight pre-registered tests on the primary α grid, with the original and the corrected judgements. The fix mostly
+    removed false “broken” calls: the mean broken rate fell from 47% to 36%, and on unsteered baselines from about 40–45% to about 5%
+    for refusal and harm (truth and language stay at 40–46%, so their high rate is not a cap artifact). Agreement with automatic metrics rose for refusal
+    (κ .03 → .25) and harm (κ .08 → .31). The conclusions hold: all eight tests now meet the pre-registered rule, still through
+    effects that vary across models and concepts rather than a dependable average effect. CCGP's pooled r with success fell from +.06 to +.03,
+    and its pooled r with broken stays negative (−.08). The positive CCGP–broken link on Gemma-4-31B is not a judge artifact:
+    it is +.57 (cat/dog) and +.71 (style) with the corrected judge, against +.56 and +.69 before.</p>
+    <div class="ss-card" id="card-compare">
+      <h3>Pre-registered tests, original vs corrected judge</h3>
+      <p class="ss-note">Pooled r is the within-cell partial correlation of the metric with the outcome, controlling decodability and depth.</p>
+      <div class="ss-tablewrap">
+        <table class="ss-table" id="table-compare" data-source="results results_v1" data-row-key="grid,test">
+          <thead><tr>
+            <th data-field="test">Test</th>
+            <th>Pooled r, original</th>
+            <th>Pooled r, corrected</th>
+            <th>Verdict, original</th>
+            <th>Verdict, corrected</th>
+            <th>Average-effect p, original</th>
+            <th>Average-effect p, corrected</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section class="ss-sec" id="glossary">
+    <h2>The concepts, by kind</h2>
+    <p>Each concept is a binary contrast the steering vector pushes between, measured across eight contexts: the target crossed with two binary nuisance variables. Bins follow a taxonomy of concept types; a bin with
+    no concept here is listed so the coverage is visible.</p>
+    <div class="ss-gloss dash-skeleton" id="gloss" data-source="concepts categories"></div>
+  </section>
+
   <section class="ss-sec" id="where">
     <h2>Where steering works</h2>
     <div class="ss-grid">
@@ -183,7 +237,8 @@ code { font-size: .92em; }
     <h2>Does geometry predict steering beyond decodability?</h2>
     <p>
       Points are the pooled within-cell partial correlation of each metric with each outcome, controlling decodability and depth,
-      with 95% intervals. Every interval crosses zero on the primary grid. The likelihood-ratio test the pre-registration used adds the
+      with 95% intervals. Only PS → broken excludes zero (r = −.09 primary, −.12 pre-registered grid), and its average effect in the
+      mixed model is not significant. The likelihood-ratio test the pre-registration used adds the
       metric's average effect and its random slopes by model and concept together; splitting it shows the gain comes almost entirely
       from the slopes, meaning the relationship varies rather than holding in general.
     </p>
@@ -211,6 +266,37 @@ code { font-size: .92em; }
             <th data-field="p_fixed">p</th>
             <th data-field="slope_lrt">Slope variance χ²</th>
             <th data-field="p_slopes">p</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section class="ss-sec" id="residual">
+    <h2>Does CCGP add anything beyond parallelism?</h2>
+    <p id="residual-text">
+      Exploratory, not pre-registered. The same pooled within-cell partial r of CCGP, but removing a different set of controls (depth is
+      always removed). Removing decodability reproduces the pre-registered estimate; removing PS asks what CCGP adds beyond the parallelism score;
+      removing both asks what is left once both are accounted for.
+      With the corrected judge, CCGP's link to success is +.07 once PS is removed (p = .055; +.09, p = .015 on the pre-registered grid) and
+      vanishes once PS and decodability are both removed (+.01). Its link to broken outputs is slightly negative under every control set and never
+      significant. So what CCGP adds beyond PS is largely what it shares with decodability. A cell is left out when CCGP is almost fully predicted by the controls
+      (multiple R &gt; .95), so the stricter control sets use fewer cells. The α grid follows the toggle above.
+    </p>
+    <div class="ss-card" id="card-residual">
+      <h3>CCGP partial r under different controls</h3>
+      <p class="ss-note">Pooled with the same random-effects meta-analysis as the pre-registered estimate. Cells: included cells.</p>
+      <div class="ss-tablewrap">
+        <table class="ss-table" id="table-residual" data-source="ccgp_residual" data-row-key="grid,outcome,controls">
+          <thead><tr>
+            <th data-field="outcome">Outcome</th>
+            <th data-field="controls_label">Removed from CCGP</th>
+            <th data-field="partial_r_pooled">Pooled r</th>
+            <th data-field="ci_low">95% CI low</th>
+            <th data-field="ci_high">95% CI high</th>
+            <th data-field="p">p</th>
+            <th data-field="k_cells">Cells</th>
           </tr></thead>
           <tbody></tbody>
         </table>
@@ -246,12 +332,13 @@ code { font-size: .92em; }
   <section class="ss-sec" id="validity">
     <h2>How much to trust the outcomes</h2>
     <p>
-      Two judges agree reasonably on broken outputs and less on success. The judge already calls part of the unsteered baselines broken,
-      most on refusal, harm, truth and language, which are also the concepts where judges and automatic metrics agree least.
+      Two judges agree reasonably on broken outputs and less on success (judge agreement uses the original judgements; the re-judge of
+      the GLM sample is still running). With the corrected judge, unsteered baselines are rarely called broken except on truth and
+      language, where 40–46% are.
     </p>
     <div class="ss-grid">
       <div class="ss-card" id="card-crossjudge">
-        <h3>Judge agreement by model family</h3>
+        <h3>Judge agreement by model family (original judge)</h3>
         <p class="ss-note">Qwen3.6-27B vs GLM-4.5-Air on the same rows.</p>
         <div class="ss-tablewrap">
           <table class="ss-table" id="table-crossjudge" data-source="crossjudge" data-row-key="level">
@@ -289,7 +376,7 @@ code { font-size: .92em; }
         <table class="ss-table" id="table-concepts" data-source="concepts" data-row-key="concept">
           <thead><tr>
             <th data-field="concept">Concept</th>
-            <th data-field="abstractness">Type</th>
+            <th data-field="category">Bin</th>
             <th data-field="success">Success</th>
             <th data-field="broken">Broken</th>
             <th data-field="baseline_broken">Baseline broken</th>
@@ -389,7 +476,7 @@ code { font-size: .92em; }
   </section>
 </div>
 <footer class="ss-foot">
-  <span>Data behind every chart and table: <a href="data/study_facts.csv">study_facts.csv</a> · <a href="data/profiles.csv">profiles.csv</a> · <a href="data/results.csv">results.csv</a> · <a href="data/models.csv">models.csv</a> · <a href="data/concepts.csv">concepts.csv</a> · <a href="data/crossjudge.csv">crossjudge.csv</a> · <a href="data/h4.csv">h4.csv</a> · <a href="data/vecsize.csv">vecsize.csv</a> · <a href="data/vecsize_layers.csv">vecsize_layers.csv</a></span>
+  <span>Data behind every chart and table: <a href="data/study_facts.csv">study_facts.csv</a> · <a href="data/profiles.csv">profiles.csv</a> · <a href="data/results.csv">results.csv</a> · <a href="data/models.csv">models.csv</a> · <a href="data/concepts.csv">concepts.csv</a> · <a href="data/crossjudge.csv">crossjudge.csv</a> · <a href="data/h4.csv">h4.csv</a> · <a href="data/ccgp_residual.csv">ccgp_residual.csv</a> · <a href="data/vecsize.csv">vecsize.csv</a> · <a href="data/vecsize_layers.csv">vecsize_layers.csv</a></span>
   <span>Aggregated results only; no model generations or prompts are published here.</span>
 </footer>
 </div>
@@ -397,7 +484,7 @@ code { font-size: .92em; }
 <script>
 /* Minimal stand-in for the dashboard runtime: loads the CSVs beside this page. */
 (() => {
-  const ids = ['study_facts', 'profiles', 'results', 'models', 'concepts', 'crossjudge', 'h4', 'vecsize', 'vecsize_layers'];
+  const ids = ['study_facts', 'profiles', 'results', 'results_v1', 'models', 'concepts', 'categories', 'crossjudge', 'h4', 'ccgp_residual', 'vecsize', 'vecsize_layers', 'sources'];
   const store = {}, calcs = {}, listeners = [];
   const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
   ids.forEach((id) => { store[id] = { status: 'loading', data: [], columns: [] }; });
@@ -431,7 +518,7 @@ code { font-size: .92em; }
   const num = (v) => (v === '' || v == null ? NaN : Number(v));
   const f2 = d3.format('.2f'), f3 = d3.format('.3f'), pct = d3.format('.0%'), sgn2 = d3.format('+.2f'), sgn3 = d3.format('+.3f'), int = d3.format(',');
   const fp = (v) => (Number.isNaN(v) ? '—' : v < 0.001 ? '<0.001' : f3(v));
-  const ID = ['study_facts', 'profiles', 'results', 'models', 'concepts', 'crossjudge', 'h4', 'vecsize', 'vecsize_layers'];
+  const ID = ['study_facts', 'profiles', 'results', 'results_v1', 'models', 'concepts', 'categories', 'crossjudge', 'h4', 'ccgp_residual', 'vecsize', 'vecsize_layers', 'sources'];
 
   dash.calc('verdict_summary', {
     inputs: ['results'],
@@ -652,16 +739,53 @@ code { font-size: .92em; }
     const h4 = dash.data('h4');
     if (h4.status === 'ok') table(document.getElementById('table-h4'), 'h4', h4.data, ['grid', 'concept'], [
       ['concept', null, 'ss-txt'], ['grid', null], ['partial_r_ccgp_broken', sgn2]]);
+    const rs = dash.data('ccgp_residual');
+    if (rs.status === 'ok') table(document.getElementById('table-residual'), 'ccgp_residual',
+      rs.data.filter((r) => r.grid === state.grid), ['grid', 'outcome', 'controls'], [
+      ['outcome', null, 'ss-txt'], ['controls_label', null, 'ss-txt'], ['partial_r_pooled', sgn3], ['ci_low', sgn3], ['ci_high', sgn3],
+      ['p', fp], ['k_cells', int]]);
     const con = dash.data('concepts');
     if (con.status === 'ok') table(document.getElementById('table-concepts'), 'concepts',
       [...con.data].sort((a, b) => num(b.success) - num(a.success)), ['concept'], [
-      ['concept', null, 'ss-txt'], ['abstractness', null], ['success', pct], ['broken', pct], ['baseline_broken', pct],
+      ['concept', null, 'ss-txt'], ['category', null, 'ss-txt'], ['success', pct], ['broken', pct], ['baseline_broken', pct],
       ['kappa_success', f2], ['kappa_broken', f2], ['auto_metric', null], ['auto_kappa', f2]]);
     const mod = dash.data('models');
     if (mod.status === 'ok') table(document.getElementById('table-models'), 'models',
       [...mod.data].sort((a, b) => num(b.success) - num(a.success)), ['model'], [
       ['model', null, 'ss-txt'], ['family', null], ['params_b', (v) => d3.format('.1f')(v)], ['success', pct], ['broken', pct],
       ['ccgp_r_success', sgn2], ['ccgp_r_broken', sgn2]]);
+    const v1 = dash.data('results_v1');
+    if (res.status === 'ok' && v1.status === 'ok') {
+      const old = new Map(v1.data.filter((r) => r.grid === 'primary').map((r) => [r.test, r]));
+      const tbody = document.querySelector('#table-compare tbody'); tbody.replaceChildren();
+      for (const r of res.data.filter((x) => x.grid === 'primary')) {
+        const o = old.get(r.test) || {};
+        const tr = document.createElement('tr'); tr.dataset.key = `primary,${encodeURIComponent(r.test)}`;
+        const cells = [r.test, sgn3(num(o.partial_r_pooled)), sgn3(num(r.partial_r_pooled)), o.prereg_verdict || '—', r.prereg_verdict,
+          fp(num(o.p_fixed)), fp(num(r.p_fixed))];
+        cells.forEach((v, i) => { const td = document.createElement('td'); if (i === 0) td.className = 'ss-txt'; td.textContent = v; tr.append(td); });
+        tbody.append(tr);
+      }
+    }
+    const cats = dash.data('categories'), conc = dash.data('concepts');
+    const gloss = document.getElementById('gloss');
+    if (!failed(gloss, 'concepts') && cats.status === 'ok') {
+      gloss.replaceChildren();
+      for (const c of cats.data) {
+        const members = conc.data.filter((r) => r.category === c.category);
+        const box = document.createElement('div'); box.className = 'ss-gloss-bin' + (members.length ? '' : ' empty');
+        const h = document.createElement('h3'); h.textContent = c.category; box.append(h);
+        if (!members.length) { const e = document.createElement('p'); e.className = 'ss-note'; e.textContent = 'No concept in this study.'; box.append(e); }
+        for (const m of members) {
+          const d = document.createElement('div'); d.className = 'ss-gloss-item';
+          const n = document.createElement('code'); n.textContent = m.concept;
+          const t = document.createElement('p'); t.textContent = m.definition;
+          const v = document.createElement('p'); v.className = 'ss-gloss-nuis'; v.textContent = `Context varied: ${m.nuisance_1}; ${m.nuisance_2}`;
+          d.append(n, t, v); box.append(d);
+        }
+        gloss.append(box);
+      }
+    }
     const vs = dash.data('vecsize');
     const vsEl = document.getElementById('chart-vec-delta');
     if (!failed(vsEl, 'vecsize')) {
