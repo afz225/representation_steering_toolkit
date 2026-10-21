@@ -126,15 +126,15 @@ code { font-size: .92em; }
       comes from effects that differ between models and concepts, in both directions. Only one pooled estimate clears zero: a higher
       parallelism score goes with slightly fewer broken outputs.
     </p>
-    <p class="ss-sub">Pre-registered analysis, run 2026-10-20; re-run on corrected judgements 2026-10-21. Judge: Qwen3.6-27B, with a GLM-4.5-Air re-judge of a 10% sample (original judgements, being redone).</p>
+    <p class="ss-sub">Pre-registered analysis, run 2026-10-20; re-run on corrected judgements 2026-10-21. Judge: Qwen3.6-27B, with a GLM-4.5-Air re-judge of a 10% sample (also re-run with the note).</p>
   </header>
 
   <aside class="ss-banner" id="judge-fix">
     <strong>Updated with corrected judgements.</strong> The original judge prompt counted “truncated” output as broken, but every
     generation is capped at 35 new tokens (64 for the MWE concepts) and the judge was not told, so many outputs were marked broken
     just for stopping at the cap. Every steered/baseline pair was re-judged with one added sentence stating the cap. Figures on this
-    page use the re-judged outcomes; the table below compares them with the original analysis. The vector-set-size side study and
-    any section marked “original judge” still use the first judgements.
+    page use the re-judged outcomes; the table below compares them with the original analysis. The vector-set-size side study still uses the first judgements;
+    the GLM cross-judge sample was re-judged the same way.
   </aside>
 
   <section class="ss-tiles" id="headline" aria-label="Headline figures">
@@ -148,7 +148,7 @@ code { font-size: .92em; }
     </div>
     <div class="ss-tile">
       <div class="ss-big ss-warn"><span data-source="crossjudge" data-field="kappa_success" data-where="level=all" class="dash-skeleton">—</span></div>
-      <div class="ss-label">κ between the two judges on success (original judgements), below the pre-registered .6 bar (a limitation)</div>
+      <div class="ss-label">κ between the two judges on success, below the pre-registered .6 bar (a limitation)</div>
     </div>
     <div class="ss-tile">
       <div class="ss-big ss-bad"><span data-source="h4" data-field="partial_r_ccgp_broken" data-where="grid=primary&amp;concept=cat_dog" class="dash-skeleton">—</span></div>
@@ -332,13 +332,13 @@ code { font-size: .92em; }
   <section class="ss-sec" id="validity">
     <h2>How much to trust the outcomes</h2>
     <p>
-      Two judges agree reasonably on broken outputs and less on success (judge agreement uses the original judgements; the re-judge of
-      the GLM sample is still running). With the corrected judge, unsteered baselines are rarely called broken except on truth and
+      Two judges agree well on broken outputs and less on success. With the length-cap note given to both judges, agreement rose from
+      κ .70 to .82 on broken and from .52 to .55 on success. With the corrected judge, unsteered baselines are rarely called broken except on truth and
       language, where 40–46% are.
     </p>
     <div class="ss-grid">
       <div class="ss-card" id="card-crossjudge">
-        <h3>Judge agreement by model family (original judge)</h3>
+        <h3>Judge agreement by model family</h3>
         <p class="ss-note">Qwen3.6-27B vs GLM-4.5-Air on the same rows.</p>
         <div class="ss-tablewrap">
           <table class="ss-table" id="table-crossjudge" data-source="crossjudge" data-row-key="level">
